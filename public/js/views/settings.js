@@ -1,8 +1,11 @@
 // Ajustes: negocio, catálogo, usuarios, mesas, sucursales, dispositivo, nube y Telegram.
-import { S, on, get, list, sorted, save, cfg, setMeta, tenantId, branchId, stockOf, enqueueEverything, resetDevice } from '../store.js';
+import { S, on, get, list, sorted, save, cfg, setMeta, tenantId, branchId, stockOf, enqueueEverything, resetDevice, newAccount } from '../store.js';
 import { api, syncNow } from '../sync.js';
 import { esc, money, visual, avatar, toast, openModal, confirmBox, promptBox, imageToDataUrl, qty } from '../ui.js';
 import { MODULES, PRESETS } from '../shared/presets.js';
+import { modifiersEditor } from '../modifiers.js';
+import { toCSV, parseCSV, download, productFromRow, PRODUCT_COLUMNS } from '../shared/csv.js';
+import { printerCfg, savePrinterCfg, connect as connectPrinter, printTest, support as printSupport } from '../printer.js';
 import { ROLES } from '../shared/schema.js';
 import { uid, pinHash, round3 } from '../shared/util.js';
 
@@ -46,8 +49,10 @@ export function mount(el, params) {
       <label class="toggle"><input type="checkbox" name="allow_negative_stock" ${c.allow_negative_stock !== false ? 'checked' : ''}><span><b>Vender aunque el sistema diga agotado</b><small>Solo muestra un aviso</small></span></label>
       <label>Zona horaria</label><input name="timezone" value="${esc(c.timezone || '')}">
       <label>Moneda</label><input name="currency" value="${esc(c.currency || 'MXN')}" maxlength="3">
+      <label>Encabezado del ticket (dirección, teléfono, RFC)</label><textarea name="ticket_header" rows="2">${esc(c.ticket_header || '')}</textarea>
       <label>Pie del ticket</label><input name="ticket_footer" value="${esc(c.ticket_footer || '')}">
       <div class="actions left"><button class="btn primary">Guardar</button></div></form>
+      ${!S.meta.demo && S.user?.role === 'owner' ? '<div class="panel"><h3>🔑 Cuenta en la nube</h3><p class="muted">Correo y contraseña del dueño para conectar dispositivos y entrar al sistema.</p><button class="btn" data-act="change-pass">Cambiar contraseña</button></div>' : ''}
       ${S.meta.demo ? `<div class="panel"><h3>☁️ Conectar a la nube</h3><p class="muted">Ahora tus datos viven solo en este dispositivo. Crea tu cuenta para usar meseros/cocina en otros dispositivos, tener respaldo y recibir reportes por Telegram. No se pierde nada de lo que ya capturaste.</p><button class="btn primary" data-act="go-cloud">Crear cuenta en la nube</button></div>` : ''}`;
   }
 
@@ -55,10 +60,13 @@ export function mount(el, params) {
   function products() {
     const s = search.toLowerCase();
     const prods = sorted('products', (p) => !s || p.name.toLowerCase().includes(s) || (p.barcode || '').includes(s));
-    return `<div class="view-head"><h2>Productos</h2><button class="btn primary" data-act="new-product">＋ Nuevo producto</button></div>
+    return `<div class="view-head"><h2>Productos</h2><div class="inline">
+        <button class="btn" data-act="export-products" title="Descargar para Excel">⬇ CSV</button>
+        <label class="btn" title="Subir desde Excel (guardar como CSV)">⬆ Importar<input type="file" accept=".csv,text/csv" id="import-csv" hidden></label>
+        <button class="btn primary" data-act="new-product">＋ Nuevo producto</button></div></div>
       <div class="search"><span>🔎</span><input id="ps" type="search" value="${esc(search)}" placeholder="Buscar…"></div>
       <div class="inv-list">${prods.map((p) => `<button class="inv-row clickable ${p.active === 0 ? 'inactive' : ''}" data-act="edit-product" data-id="${p.id}">
-        ${visual(p, 'sm')}<div class="ir-info"><b>${esc(p.name)}</b><small>${esc(get('categories', p.category_id)?.name || 'Sin categoría')}${p.sellable === 0 ? ' · insumo' : ''}${p.station ? ` · ${esc(p.station)}` : ''}${p.track_stock ? ` · stock ${qty(stockOf(p.id), p.unit)}` : ''}${(p.recipe || []).length ? ' · receta' : ''}</small></div>
+        ${visual(p, 'sm')}<div class="ir-info"><b>${esc(p.name)}</b><small>${esc(get('categories', p.category_id)?.name || 'Sin categoría')}${p.sellable === 0 ? ' · insumo' : ''}${p.station ? ` · ${esc(p.station)}` : ''}${p.track_stock ? ` · stock ${qty(stockOf(p.id), p.unit)}` : ''}${(p.recipe || []).length ? ' · receta' : ''}${(p.modifiers || []).length ? ' · extras' : ''}</small></div>
         <div class="ir-qty"><b>${p.sellable === 0 ? '—' : money(p.price)}</b></div></button>`).join('')}</div>`;
   }
 
@@ -67,6 +75,7 @@ export function mount(el, params) {
     p = p || { id: uid(), name: '', price: 0, unit: 'pza', emoji: '🏷️', image: '', station: '', track_stock: 0, stock_min: 0, recipe: [], active: 1, sellable: 1, cost: 0, sort: list('products').length };
     let image = p.image || '';
     let recipe = [...(p.recipe || [])];
+    const modEd = modifiersEditor(p.modifiers, { selfId: p.id });
     const c = cfg();
     const stations = [...new Set(['cocina', 'barra', ...list('products', (x) => x.station).map((x) => x.station)])];
     const ingredients = () => sorted('products', (x) => x.id !== p.id && x.track_stock);
@@ -94,6 +103,8 @@ export function mount(el, params) {
           <label class="toggle"><input type="checkbox" name="sellable" ${p.sellable !== 0 ? 'checked' : ''}><span><b>Aparece en venta</b><small>Desactiva para insumos (tortillas, carne, leche…)</small></span></label>
           <label class="toggle"><input type="checkbox" name="active" ${p.active !== 0 ? 'checked' : ''}><span><b>Activo</b></span></label>
           ${c.modules?.recipes ? `<h3>Receta / insumos por unidad vendida</h3><p class="muted small">Ej. 1 taco = 2 tortillas + 0.035 kg de carne; 1 cubeta = 6 cervezas.</p><div id="recipe">${recipeHtml()}</div><button type="button" class="btn small" data-act="add-comp">＋ Insumo</button>` : ''}
+          <h3>Extras y variantes</h3><p class="muted small">Ej. Salsa (BBQ, Búfalo, Mango habanero), Término (medio, 3/4, bien cocido), Extras (+ queso $15). Se preguntan al vender y salen en la comanda.</p>
+          <div id="mods-box">${modEd.html()}</div>
         </div>
         <div class="actions full">${!isNew ? '<button type="button" class="btn danger ghost" data-act="del">Eliminar</button>' : ''}<button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary big">Guardar</button></div>
       </form>`,
@@ -119,6 +130,7 @@ export function mount(el, params) {
         if (t.dataset.r != null) recipe[Number(t.dataset.r)][t.dataset.f] = t.dataset.f === 'qty' ? Number(t.value) : t.value;
       },
     });
+    modEd.bind(m.$('#mods-box'));
     m.$('#file').onchange = async (e) => {
       const f = e.target.files[0];
       if (!f) return;
@@ -137,6 +149,7 @@ export function mount(el, params) {
         wholesale_min: f.wholesale_min ? num('wholesale_min') : p.wholesale_min ?? null, track_stock: f.track_stock.checked ? 1 : 0,
         stock_min: num('stock_min') || 0, sellable: f.sellable.checked ? 1 : 0, active: f.active.checked ? 1 : 0,
         recipe: recipe.filter((r) => r.product_id && r.qty > 0),
+        modifiers: modEd.value(),
       };
       const rows = [['products', row]];
       const initial = num('initial');
@@ -147,6 +160,54 @@ export function mount(el, params) {
       m.close();
       toast('Producto guardado');
     };
+  }
+
+  function exportProducts() {
+    const rows = sorted('products').map((p) => ({
+      nombre: p.name, categoria: get('categories', p.category_id)?.name || '', precio: p.price, costo: p.cost, unidad: p.unit,
+      codigo_barras: p.barcode || '', emoji: p.emoji || '', estacion: p.station || '', inventario: p.track_stock ? 'si' : 'no',
+      stock_minimo: p.stock_min || 0, existencia: p.track_stock ? stockOf(p.id) : '', en_venta: p.sellable === 0 ? 'no' : 'si',
+      precio_mayoreo: p.price_wholesale ?? '', mayoreo_desde: p.wholesale_min ?? '',
+    }));
+    download(`productos-${(cfg().name || 'kpos').replace(/\W+/g, '-').toLowerCase()}.csv`, toCSV(rows, PRODUCT_COLUMNS));
+  }
+
+  async function importProducts(file) {
+    const parsed = parseCSV(await file.text()).map(productFromRow).filter(Boolean);
+    if (!parsed.length) return toast('El archivo no tiene productos. Usa la columna "nombre".', 'error', 4000);
+    const existing = list('products');
+    const byCode = new Map(existing.filter((p) => p.barcode).map((p) => [p.barcode, p]));
+    const byName = new Map(existing.map((p) => [p.name.toLowerCase(), p]));
+    const cats = new Map(list('categories').map((c) => [c.name.toLowerCase(), c]));
+    const rows = [];
+    let created = 0;
+    let updated = 0;
+    for (const r of parsed) {
+      let catId = null;
+      if (r.category) {
+        let c = cats.get(r.category.toLowerCase());
+        if (!c) {
+          c = { id: uid(), name: r.category, emoji: '🏷️', color: COLORS[cats.size % COLORS.length], sort: cats.size, active: 1 };
+          cats.set(r.category.toLowerCase(), c);
+          rows.push(['categories', c]);
+        }
+        catId = c.id;
+      }
+      const cur = (r.barcode && byCode.get(r.barcode)) || byName.get(r.name.toLowerCase());
+      const { stock, category, ...fields } = r;
+      const prod = cur
+        ? { ...cur, ...fields, emoji: fields.emoji || cur.emoji, category_id: catId ?? cur.category_id, station: fields.station || cur.station || '' }
+        : { id: uid(), image: '', recipe: [], modifiers: [], active: 1, sort: existing.length + created, ...fields, emoji: fields.emoji || '🏷️', category_id: catId };
+      if (cur) updated += 1; else created += 1;
+      rows.push(['products', prod]);
+      if (stock != null && prod.track_stock) {
+        const diff = round3(stock - stockOf(prod.id));
+        if (diff) rows.push(['stock_moves', { id: uid(), branch_id: branchId(), product_id: prod.id, qty: diff, kind: 'count', ref_id: null, note: 'Importación CSV', user_id: S.user?.id, created_at: Date.now(), cost: prod.cost }]);
+      }
+    }
+    if (!(await confirmBox(`Se crearán ${created} y se actualizarán ${updated} productos. ¿Continuar?`, { ok: 'Importar' }))) return;
+    await save(rows);
+    toast(`Importados: ${created} nuevos, ${updated} actualizados`);
   }
 
   // ---------- Categorías ----------
@@ -254,7 +315,28 @@ export function mount(el, params) {
         <p>Cuenta: <b>${esc(S.meta.tenant?.slug || '')}</b></p><div id="code-box"><button class="btn primary" data-act="link-code">Generar código</button></div></div>
         <div class="panel"><h3>Dispositivos conectados</h3><div id="devs" class="muted">Cargando…</div></div>
         <div class="panel"><h3>Sincronización</h3><p class="muted">${S.pending ? `${S.pending} cambios esperando subir.` : 'Todo sincronizado.'} ${S.lastSync ? `Última: ${new Date(S.lastSync).toLocaleTimeString('es-MX')}` : ''}</p><button class="btn" data-act="sync">🔄 Sincronizar ahora</button></div>`}
+      ${printerPanel()}
+      <div class="panel"><h3>Almacenamiento</h3>
+        <p class="muted">${S.persisted ? '✅ El navegador conservará los datos de este dispositivo.' : '⚠️ El navegador podría borrar los datos locales si no se usa en días. Instala la app en la pantalla de inicio (Compartir → Agregar a inicio en iPhone/iPad, o menú ⋮ → Instalar en Android).'}</p></div>
+      <div class="panel"><h3>Otro negocio en este dispositivo</h3><p class="muted">Útil si el dueño maneja varios negocios desde su celular. Cada uno guarda sus datos por separado.</p>
+        <button class="btn" data-act="add-account">＋ Agregar otro negocio</button></div>
       <div class="panel danger-zone"><h3>Zona de peligro</h3><p class="muted">Borra los datos de este dispositivo${S.meta.demo ? ' (en modo local se pierde todo)' : ' (lo que ya se subió queda en la nube)'}.</p><button class="btn danger" data-act="reset">Desvincular y borrar datos locales</button></div>`;
+  }
+
+  function printerPanel() {
+    const c = printerCfg();
+    const stations = [...new Set(list('products', (p) => p.station).map((p) => p.station))];
+    return `<div class="panel"><h3>🖨️ Impresora de este dispositivo</h3>
+      <div class="seg">${[['system', 'Del sistema / AirPrint'], ['bluetooth', 'Bluetooth térmica'], ['serial', 'USB térmica'], ['none', 'Ninguna']].map(([k, v]) => `<button class="${c.type === k ? 'on' : ''}" data-act="pr-type" data-t="${k}" ${(k === 'bluetooth' && !printSupport.bluetooth) || (k === 'serial' && !printSupport.serial) ? 'disabled title="Este navegador no lo permite"' : ''}>${v}</button>`).join('')}</div>
+      ${c.device_name && c.type !== 'system' ? `<p class="muted">Conectada: <b>${esc(c.device_name)}</b></p>` : ''}
+      ${!printSupport.bluetooth ? '<p class="muted small">En iPhone/iPad usa una impresora compatible con AirPrint (opción "Del sistema").</p>' : ''}
+      <div class="form">
+        <label>Ancho de papel</label><div class="seg">${[58, 80].map((w) => `<button class="${Number(c.width) === w ? 'on' : ''}" data-act="pr-width" data-w="${w}">${w} mm</button>`).join('')}</div>
+        <label class="toggle"><input type="checkbox" data-pr="auto_receipt" ${c.auto_receipt ? 'checked' : ''}><span><b>Imprimir ticket al cobrar</b></span></label>
+        <label class="toggle"><input type="checkbox" data-pr="auto_kitchen" ${c.auto_kitchen ? 'checked' : ''}><span><b>Imprimir comandas que lleguen</b><small>Activa esto en el dispositivo que tiene la impresora de cocina o barra</small></span></label>
+        ${stations.length ? `<div class="hours">${stations.map((st) => `<label><input type="checkbox" data-pr-st="${esc(st)}" ${!c.stations.length || c.stations.includes(st) ? 'checked' : ''}><span>${esc(st)}</span></label>`).join('')}</div>` : ''}
+      </div>
+      <div class="actions left"><button class="btn" data-act="pr-test">Imprimir prueba</button></div></div>`;
   }
 
   async function loadDevices() {
@@ -329,6 +411,7 @@ export function mount(el, params) {
     const id = a.dataset.id;
     if (act === 'section') { section = a.dataset.s; search = ''; draw(); return; }
     if (act === 'new-product') productForm();
+    else if (act === 'export-products') exportProducts();
     else if (act === 'edit-product') productForm(get('products', id));
     else if (act === 'new-cat') catForm();
     else if (act === 'edit-cat') catForm(get('categories', id));
@@ -383,7 +466,23 @@ export function mount(el, params) {
     } else if (act === 'tg-unlink') {
       await api(`/api/telegram/chats?chat_id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       loadTelegram();
-    } else if (act === 'go-cloud') cloudForm();
+    } else if (act === 'pr-type') {
+      try {
+        const name = await connectPrinter(a.dataset.t);
+        toast(`Impresora: ${name}`);
+      } catch (err) { if (err.name !== 'NotFoundError') toast(err.message, 'error'); }
+      drawSection();
+    } else if (act === 'pr-width') { await savePrinterCfg({ width: Number(a.dataset.w) }); drawSection(); }
+    else if (act === 'pr-test') printTest();
+    else if (act === 'go-cloud') cloudForm();
+    else if (act === 'add-account') newAccount();
+    else if (act === 'change-pass') {
+      const current = await promptBox('Contraseña actual', { type: 'password', ok: 'Continuar' });
+      if (!current) return;
+      const password = await promptBox('Nueva contraseña', { type: 'password', label: 'Mínimo 6 caracteres', ok: 'Cambiar' });
+      if (!password) return;
+      try { await api('/api/password/change', { method: 'POST', body: { current, password } }); toast('Contraseña actualizada'); } catch (err) { toast(err.message, 'error'); }
+    }
   };
 
   const onSubmit = async (e) => {
@@ -391,13 +490,24 @@ export function mount(el, params) {
       e.preventDefault();
       const f = e.target;
       const modules = Object.fromEntries(Object.keys(MODULES).map((k) => [k, f[`mod_${k}`].checked]));
-      await setCfg({ name: f.name.value.trim(), type: f.type.value, modules, waiters_can_charge: f.waiters_can_charge.checked, allow_negative_stock: f.allow_negative_stock.checked, timezone: f.timezone.value.trim() || 'America/Mexico_City', currency: f.currency.value.trim().toUpperCase() || 'MXN', ticket_footer: f.ticket_footer.value });
+      await setCfg({ name: f.name.value.trim(), type: f.type.value, modules, waiters_can_charge: f.waiters_can_charge.checked, allow_negative_stock: f.allow_negative_stock.checked, timezone: f.timezone.value.trim() || 'America/Mexico_City', currency: f.currency.value.trim().toUpperCase() || 'MXN', ticket_footer: f.ticket_footer.value, ticket_header: f.ticket_header.value });
       toast('Guardado');
     } else if (e.target.id === 'tgf') {
       e.preventDefault();
       const f = e.target;
       await setCfg({ report_hour: Number(f.report_hour.value), progress_hours: [...f.querySelectorAll('[name=ph]:checked')].map((x) => Number(x.value)) });
       toast('Horarios guardados');
+    }
+  };
+
+  const onChange = async (e) => {
+    const t = e.target;
+    if (t.id === 'import-csv' && t.files[0]) { await importProducts(t.files[0]); t.value = ''; return; }
+    if (t.dataset.pr) await savePrinterCfg({ [t.dataset.pr]: t.checked });
+    if (t.dataset.prSt != null) {
+      const all = [...el.querySelectorAll('[data-pr-st]')];
+      const on2 = all.filter((x) => x.checked).map((x) => x.dataset.prSt);
+      await savePrinterCfg({ stations: on2.length === all.length ? [] : on2 });
     }
   };
 
@@ -414,10 +524,11 @@ export function mount(el, params) {
   el.addEventListener('click', onClick);
   el.addEventListener('submit', onSubmit);
   el.addEventListener('input', onInput);
+  el.addEventListener('change', onChange);
   const off = on((c) => {
     const relevant = { products: ['products', 'categories', 'stock_moves'], categories: ['categories', 'products'], users: ['users'], tables: ['tables'], branches: ['branches'] }[section];
     if (relevant && relevant.some((t) => c.has(t))) drawSection();
   });
   draw();
-  return () => { off(); el.removeEventListener('click', onClick); el.removeEventListener('submit', onSubmit); el.removeEventListener('input', onInput); };
+  return () => { off(); el.removeEventListener('click', onClick); el.removeEventListener('submit', onSubmit); el.removeEventListener('input', onInput); el.removeEventListener('change', onChange); };
 }

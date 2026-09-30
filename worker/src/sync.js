@@ -43,7 +43,7 @@ function cleanValue(table, col, v) {
 }
 
 export function validChange(c) {
-  return c && TABLES[c.t] && c.r && typeof c.r.id === 'string' && c.r.id.length > 0 && c.r.id.length <= 80
+  return c && TABLES[c.t] && c.r && typeof c.r.id === 'string' && c.r.id.length > 0 && c.r.id.length <= 160
     && Number.isFinite(Number(c.r.updated_at));
 }
 

@@ -22,6 +22,21 @@ abarrotes/minisúper, fruterías/verdulerías, mayoreo, papelerías y más.
 | **Reportes** | Dueño | Ventas, tickets, métodos de pago, por hora, más vendidos, por usuario, caja y stock bajo. |
 | **Ajustes** | Dueño | Productos con foto de la cámara, categorías, usuarios y roles, mesas, sucursales, dispositivos, Telegram. |
 
+Además:
+
+- **Extras y variantes**: salsas, término, marca de la cubeta, "+ queso $15"; se eligen al vender, salen en la comanda
+  y pueden descontar inventario (cubeta de Victoria = 6 Victorias).
+- **Cobro completo**: pago mixto, dividir entre personas, propinas, dividir la cuenta o pasar productos a otra
+  cuenta, unir mesas, pre-cuenta.
+- **Control anti-robo hormiga**: cancelar lo enviado o dar descuentos pide **PIN de encargado** y queda en una
+  bitácora visible en Reportes y en Telegram.
+- **Impresión**: ticket y comanda por impresora del sistema/AirPrint o térmica ESC/POS por Bluetooth o USB;
+  la tablet de barra/cocina imprime sola lo que le llega.
+- **Tiempo real**: las comandas llegan al instante (Durable Objects); si no hay conexión en vivo, consulta cada 4 s.
+- **Excel**: importar y exportar productos en CSV; exportar ventas por rango de fechas.
+- **Varios negocios en un mismo celular** (dueño con dos marcas) y recuperación de contraseña por correo.
+- **Panel para ti** (`/admin.html`): clientes, plan, fecha de pago, suspender/reactivar, códigos de soporte.
+
 Roles: **Dueño**, **Encargado**, **Cajero**, **Mesero**, **Cocina/Barra**. Una taquería con una sola tablet
 funciona igual que un restaurante con 5 meseros y 2 pantallas de cocina: solo cambia qué módulos están activos.
 
@@ -40,31 +55,18 @@ Puedes crear el negocio "sin cuenta en la nube" (modo local) o con cuenta para p
 Prueba de navegador de punta a punta (dos dispositivos, venta, comanda, cobro, modo sin conexión, corte):
 
 ```bash
-npm run dev &
+RATE_LIMIT=off npm run dev &
 npx playwright install chromium   # solo la primera vez
 node test/e2e.mjs http://localhost:8787 test-results
+ADMIN_KEY=admin-test RATE_LIMIT=off npm run dev &   # para la prueba de bar
+node test/e2e-bar.mjs http://localhost:8787 test-results
 ```
 
-## Desplegar en Cloudflare
+## Publicar
 
-```bash
-npx wrangler d1 create k-pos                 # copia el database_id a wrangler.toml
-npm run db:migrate                           # crea las tablas en D1
-npx wrangler secret put TELEGRAM_BOT_TOKEN   # token de @BotFather
-npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
-npx wrangler secret put ADMIN_KEY
-npm run deploy
-```
-
-1. En `wrangler.toml` pon tu dominio en `ROOT_DOMAIN` y el usuario del bot en `TELEGRAM_BOT_USERNAME`.
-2. En Cloudflare DNS agrega `*.tudominio` (proxied) y las rutas del Worker (`tudominio/*` y `*.tudominio/*`).
-3. Registra el webhook del bot una vez:
-   ```bash
-   curl -X POST https://tudominio/api/admin/telegram-setup -H "x-admin-key: TU_ADMIN_KEY"
-   ```
-4. El cron (cada hora) manda a cada negocio su resumen a la hora que eligió en **Ajustes → Telegram**.
-
-Cada despliegue: sube `VERSION` en `public/sw.js` para que los dispositivos tomen la nueva versión.
+Sin dominio: se publica en `https://k-pos.<tu-cuenta>.workers.dev`. Pasos completos (y publicación automática
+desde GitHub Actions) en **[docs/PUBLICAR.md](docs/PUBLICAR.md)**. Guía para dejar operando al primer cliente:
+**[docs/GUIA-ROCKALITAS.md](docs/GUIA-ROCKALITAS.md)**.
 
 ## Estructura
 

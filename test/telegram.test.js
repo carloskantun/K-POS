@@ -47,13 +47,13 @@ test('Telegram: vincular chat, corte de caja, stock bajo y resumen diario', asyn
   assert.match(sent.at(-1).body.text, /vinculado con <b>Bar El Gallo<\/b>/);
 
   // Se venden 100 cervezas de 120 (mínimo 24): llega alerta de stock bajo una sola vez al día.
-  const cerveza = seed.rows.products.find((p) => p.name === 'Cerveza');
+  const cerveza = seed.rows.products.find((p) => p.name === 'Corona');
   const now = Date.now();
   const move = (q) => ({ t: 'stock_moves', r: { id: uid(), updated_at: now, branch_id: seed.branchId, product_id: cerveza.id, qty: q, kind: 'sale', created_at: now } });
   sent.length = 0;
   await call('POST', '/api/sync/push', { changes: [move(-100)] });
   assert.equal(sent.length, 1);
-  assert.match(sent[0].body.text, /Stock bajo[\s\S]*Cerveza: quedan 20/);
+  assert.match(sent[0].body.text, /Stock bajo[\s\S]*Corona: quedan 20/);
   await call('POST', '/api/sync/push', { changes: [move(-1)] });
   assert.equal(sent.length, 1, 'no repite la alerta el mismo día');
 
@@ -67,7 +67,7 @@ test('Telegram: vincular chat, corte de caja, stock bajo y resumen diario', asyn
   // Comandos
   sent.length = 0;
   await hook('/stock');
-  assert.match(sent[0].body.text, /Cerveza/);
+  assert.match(sent[0].body.text, /Corona/);
   await hook('/hoy');
   assert.match(sent[1].body.text, /Cómo va hoy/);
 

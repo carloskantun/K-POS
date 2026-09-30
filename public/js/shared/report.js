@@ -18,9 +18,18 @@ export function computeSummary(data, { from, to, branchId = null }) {
   const discount = round2(paid.reduce((s, o) => s + (Number(o.discount) || 0), 0));
 
   const byMethod = {};
+  const orderById = new Map(paid.map((o) => [o.id, o]));
+  const tipsByUser = new Map();
+  let tips = 0;
   for (const p of data.payments || []) {
     if (!live(p) || !paidIds.has(p.order_id)) continue;
     byMethod[p.method] = round2((byMethod[p.method] || 0) + Number(p.amount || 0));
+    const tip = Number(p.tip) || 0;
+    if (tip) {
+      tips += tip;
+      const uid = orderById.get(p.order_id)?.user_id;
+      tipsByUser.set(uid, round2((tipsByUser.get(uid) || 0) + tip));
+    }
   }
 
   const prod = new Map();
@@ -51,7 +60,13 @@ export function computeSummary(data, { from, to, branchId = null }) {
     cur.total = round2(cur.total + Number(o.total || 0));
     us.set(o.user_id, cur);
   }
+  for (const u of us.values()) u.tips = tipsByUser.get(u.user_id) || 0;
   const byUser = [...us.values()].sort((a, b) => b.total - a.total);
+
+  // Bitácora: cancelaciones, descuentos y otras acciones autorizadas en el rango.
+  const audit = (data.audit || []).filter((a) => live(a) && inBranch(a) && inRange(a.created_at))
+    .sort((a, b) => a.created_at - b.created_at)
+    .map((a) => ({ ...a, user: users.get(a.user_id)?.name || '', authorized: users.get(a.authorized_by)?.name || '' }));
 
   const hours = new Array(24).fill(0);
   if (data.tz) {
@@ -92,6 +107,7 @@ export function computeSummary(data, { from, to, branchId = null }) {
     cancelled_items: cancelledItems, cancelled_amount: round2(cancelledAmount),
     open_orders: orders.filter((o) => o.status === 'open').length,
     by_method: byMethod, by_product: byProduct, by_user: byUser, by_hour: hours.map(round2),
+    tips: round2(tips), audit,
     cash, inventory, low_stock: inventory.filter((i) => i.low),
   };
 }
@@ -108,11 +124,17 @@ export function stockMap(levels, branchId = null) {
 // Efectivo esperado en una caja: fondo + cobros en efectivo + entradas − salidas.
 export function expectedCash(session, data) {
   let sales = 0;
+  let tips = 0;
+  let cashTips = 0;
   const methods = {};
   for (const p of data.payments || []) {
     if (!live(p) || p.cash_session_id !== session.id) continue;
     methods[p.method] = round2((methods[p.method] || 0) + Number(p.amount || 0));
-    if (p.method === 'efectivo') sales += Number(p.amount || 0);
+    tips += Number(p.tip) || 0;
+    if (p.method === 'efectivo') {
+      sales += Number(p.amount || 0);
+      cashTips += Number(p.tip) || 0;
+    }
   }
   let ins = 0;
   let outs = 0;
@@ -124,6 +146,8 @@ export function expectedCash(session, data) {
   const opening = Number(session.opening_amount) || 0;
   return {
     opening, sales: round2(sales), ins: round2(ins), outs: round2(outs), methods,
-    expected: round2(opening + sales + ins - outs),
+    tips: round2(tips), cash_tips: round2(cashTips),
+    // Las propinas en efectivo entran al cajón hasta que se reparten (registrar como salida).
+    expected: round2(opening + sales + cashTips + ins - outs),
   };
 }

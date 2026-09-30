@@ -9,7 +9,7 @@ export const TABLES = {
   products: [
     'category_id', 'name', 'price', 'price_wholesale', 'wholesale_min', 'cost', 'unit',
     'barcode', 'image', 'emoji', 'station', 'track_stock', 'stock_min', 'recipe', 'sort',
-    'active', 'sellable',
+    'active', 'sellable', 'modifiers',
   ],
   tables: ['branch_id', 'name', 'zone', 'sort', 'active'],
   orders: [
@@ -18,11 +18,11 @@ export const TABLES = {
   ],
   order_items: [
     'order_id', 'branch_id', 'product_id', 'name', 'qty', 'unit', 'price', 'total', 'note',
-    'station', 'status', 'sent_at', 'ready_at', 'user_id', 'cancel_reason',
+    'station', 'status', 'sent_at', 'ready_at', 'user_id', 'cancel_reason', 'mods',
   ],
   payments: [
     'order_id', 'branch_id', 'method', 'amount', 'received', 'change_given', 'cash_session_id',
-    'user_id', 'created_at',
+    'user_id', 'created_at', 'tip',
   ],
   stock_moves: [
     'branch_id', 'product_id', 'qty', 'kind', 'ref_id', 'note', 'user_id', 'created_at', 'cost',
@@ -32,6 +32,8 @@ export const TABLES = {
     'counted_cash', 'expected_cash', 'status', 'note', 'summary',
   ],
   cash_moves: ['cash_session_id', 'branch_id', 'kind', 'amount', 'reason', 'user_id', 'created_at'],
+  // Bitácora de acciones sensibles (cancelaciones, descuentos, reaperturas) con quién autorizó.
+  audit: ['branch_id', 'user_id', 'authorized_by', 'action', 'ref_id', 'detail', 'amount', 'created_at'],
 };
 
 export const TABLE_NAMES = Object.keys(TABLES);
@@ -39,15 +41,16 @@ export const TABLE_NAMES = Object.keys(TABLES);
 // Columnas guardadas como texto JSON en D1 y como objetos en el cliente.
 export const JSON_FIELDS = {
   config: ['value'],
-  products: ['recipe'],
+  products: ['recipe', 'modifiers'],
+  order_items: ['mods'],
   cash_sessions: ['summary'],
 };
 
 // Tablas de solo inserción: un registro nunca cambia después de creado.
-export const INSERT_ONLY = ['stock_moves', 'payments', 'cash_moves'];
+export const INSERT_ONLY = ['stock_moves', 'payments', 'cash_moves', 'audit'];
 
 // Tablas operativas: en la primera sincronización solo se bajan los últimos días.
-export const OPERATIONAL = ['orders', 'order_items', 'payments', 'stock_moves', 'cash_moves'];
+export const OPERATIONAL = ['orders', 'order_items', 'payments', 'stock_moves', 'cash_moves', 'audit'];
 export const INITIAL_WINDOW_MS = 3 * 24 * 3600 * 1000;
 
 // Orden de estados: nunca se permite regresar a un estado anterior.

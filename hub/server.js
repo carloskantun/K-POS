@@ -23,10 +23,15 @@ const MIME = {
   '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8',
 };
 
+// Aplica cada migración una sola vez (igual que `wrangler d1 migrations apply`).
 export async function migrate(DB) {
   const dir = path.join(root, 'worker', 'migrations');
+  await DB.exec('CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at INTEGER)');
+  const done = new Set(((await DB.prepare('SELECT name FROM _migrations').all()).results || []).map((r) => r.name));
   for (const f of (await readdir(dir)).filter((x) => x.endsWith('.sql')).sort()) {
-    await DB.exec(await readFile(path.join(dir, f), 'utf8'));
+    if (done.has(f)) continue;
+    await DB.exec(`BEGIN;\n${await readFile(path.join(dir, f), 'utf8')}\nCOMMIT;`);
+    await DB.prepare('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)').bind(f, Date.now()).run();
   }
 }
 
@@ -54,7 +59,7 @@ export async function createEnv(dbFile = ':memory:', extra = {}) {
 }
 
 function pickEnv() {
-  const keys = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'TELEGRAM_BOT_USERNAME', 'ADMIN_KEY'];
+  const keys = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'TELEGRAM_BOT_USERNAME', 'ADMIN_KEY', 'RESEND_API_KEY', 'MAIL_FROM', 'RATE_LIMIT'];
   return Object.fromEntries(keys.filter((k) => process.env[k]).map((k) => [k, process.env[k]]));
 }
 

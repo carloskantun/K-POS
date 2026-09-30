@@ -6,23 +6,25 @@ import { esc, money, minutesAgo } from '../ui.js';
 export function mount(el, params, { go }) {
   function draw() {
     const orders = openOrders();
-    const byTable = new Map(orders.filter((o) => o.table_id).map((o) => [o.table_id, o]));
+    const byTable = new Map();
+    for (const o of orders.filter((x) => x.table_id)) byTable.set(o.table_id, [...(byTable.get(o.table_id) || []), o]);
     const tables = sorted('tables', (t) => t.active !== 0 && t.branch_id === branchId());
     const zones = [...new Set(tables.map((t) => t.zone || ''))];
     const mineOnly = S.user?.role === 'mesero';
     const loose = orders.filter((o) => !o.table_id && o.kind !== 'mostrador');
 
     const card = (t) => {
-      const o = byTable.get(t.id);
-      if (!o) return `<button class="table-card free" data-act="table" data-id="${t.id}"><b>${esc(t.name)}</b><small>Libre</small></button>`;
-      const items = liveItems(o.id);
+      const os = byTable.get(t.id);
+      if (!os) return `<button class="table-card free" data-act="table" data-id="${t.id}"><b>${esc(t.name)}</b><small>Libre</small></button>`;
+      const o = { ...os[0], total: os.reduce((a, x) => a + Number(x.total || 0), 0) };
+      const items = os.flatMap((x) => liveItems(x.id));
       const ready = items.filter((i) => i.status === 'ready').length;
       const cooking = items.filter((i) => i.status === 'sent').length;
       const u = get('users', o.user_id);
       const mine = o.user_id === S.user?.id;
       return `<button class="table-card busy ${ready ? 'ready' : ''} ${mineOnly && !mine ? 'other' : ''}" data-act="table" data-id="${t.id}">
         <b>${esc(t.name)}</b><span class="tc-total">${money(o.total)}</span>
-        <small>${u ? esc(u.name) : ''} · ${minutesAgo(o.opened_at)} min</small>
+        <small>${u ? esc(u.name) : ''} · ${minutesAgo(o.opened_at)} min${os.length > 1 ? ` · ${os.length} cuentas` : ''}</small>
         ${ready ? `<span class="tag green">🔔 ${ready} listo</span>` : cooking ? `<span class="tag amber">🔥 ${cooking}</span>` : ''}
       </button>`;
     };

@@ -1,5 +1,6 @@
 import { S, init, on, can, mod, cfg, login, get } from './store.js';
 import { startSync, syncNow } from './sync.js';
+import { startKitchenPrinting } from './printer.js';
 import { esc, avatar, toast } from './ui.js';
 import * as setup from './views/setup.js';
 import * as lock from './views/login.js';
@@ -147,9 +148,10 @@ window.addEventListener('hashchange', render);
 let syncStarted = false;
 async function boot() {
   await init();
-  if (S.meta.device && !S.meta.demo && !syncStarted) {
+  if (S.meta.device && !syncStarted) {
     syncStarted = true;
-    startSync();
+    if (!S.meta.demo) startSync();
+    startKitchenPrinting();
   }
   render();
 }

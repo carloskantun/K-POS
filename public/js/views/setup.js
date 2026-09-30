@@ -1,7 +1,7 @@
 // Alta de negocio / vinculación de dispositivo.
-import { save, setMeta, login, list } from '../store.js';
+import { save, setMeta, login, list, accounts, activeDb, switchAccount } from '../store.js';
 import { api, syncNow } from '../sync.js';
-import { esc, toast } from '../ui.js';
+import { esc, toast, promptBox } from '../ui.js';
 import { PRESETS, buildSeed } from '../shared/presets.js';
 import { uid } from '../shared/util.js';
 
@@ -26,6 +26,8 @@ export function mount(el, { onDone }) {
     }
   }).catch(() => {});
 
+  const others = () => accounts().filter((a) => a.db !== activeDb());
+
   function draw() {
     if (step === 'welcome') {
       el.innerHTML = `<div class="setup">
@@ -33,7 +35,9 @@ export function mount(el, { onDone }) {
         <div class="setup-choices">
           <button class="choice" data-act="create"><span>🏪</span><b>Crear mi negocio</b><small>Elige tu giro y empieza a vender en 1 minuto</small></button>
           <button class="choice" data-act="link"><span>📲</span><b>Conectar este dispositivo</b><small>${hostSlug ? `Unirse a <b>${esc(hostSlug)}</b> con un código` : 'Unirse a un negocio que ya existe (mesero, cocina, otra caja)'}</small></button>
-        </div></div>`;
+        </div>
+        ${others().length ? `<div class="panel"><h3>Negocios en este dispositivo</h3><div class="menu-list">${others().map((a) => `<button data-act="switch" data-db="${esc(a.db)}">🏪 ${esc(a.name)}</button>`).join('')}</div></div>` : ''}
+        </div>`;
     } else if (step === 'type') {
       el.innerHTML = `<div class="setup"><h2>¿Qué tipo de negocio tienes?</h2><p class="muted">Se activan las funciones que usas y se carga un catálogo de ejemplo que puedes editar.</p>
         <div class="type-grid">${Object.entries(PRESETS).map(([k, p]) => `<button class="type-card" data-act="type" data-type="${k}"><span>${p.emoji}</span><b>${esc(p.label)}</b></button>`).join('')}</div>
@@ -58,8 +62,15 @@ export function mount(el, { onDone }) {
       let slugTouched = false;
       f.name.oninput = () => { if (!slugTouched) f.slug.value = slugify(f.name.value); };
       f.slug.oninput = () => { slugTouched = true; f.slug.value = slugify(f.slug.value); };
-      f.cloud.onchange = () => { el.querySelector('#cloud').hidden = !f.cloud.checked; };
-      if (!navigator.onLine) { f.cloud.checked = false; el.querySelector('#cloud').hidden = true; }
+      // Los campos de la nube se desactivan (no solo se ocultan) para que no bloqueen el formulario.
+      const syncCloud = () => {
+        const box = el.querySelector('#cloud');
+        box.hidden = !f.cloud.checked;
+        box.querySelectorAll('input').forEach((i) => { i.disabled = !f.cloud.checked; });
+      };
+      f.cloud.onchange = syncCloud;
+      if (!navigator.onLine) f.cloud.checked = false;
+      syncCloud();
       f.onsubmit = (e) => { e.preventDefault(); create(f); };
     } else if (step === 'link') {
       el.innerHTML = `<div class="setup narrow"><h2>📲 Conectar dispositivo</h2>
@@ -68,7 +79,8 @@ export function mount(el, { onDone }) {
           <label>Cuenta del negocio</label><input name="slug" required value="${esc(hostSlug || '')}" placeholder="taqueria-lupita">
           <label>Nombre de este dispositivo</label><input name="device" required value="${esc(guessDevice())}">
           <div id="by-code"><label>Código de 6 dígitos</label><input name="code" inputmode="numeric" maxlength="6" placeholder="123456" autofocus></div>
-          <div id="by-pass" hidden><label>Correo del dueño</label><input name="email" type="email"><label>Contraseña</label><input name="password" type="password"></div>
+          <div id="by-pass" hidden><label>Correo del dueño</label><input name="email" type="email"><label>Contraseña</label><input name="password" type="password">
+            <button type="button" class="btn ghost small" data-act="forgot">¿Olvidaste tu contraseña?</button></div>
           <button type="button" class="btn ghost small" data-act="toggle-pass">Usar correo y contraseña del dueño</button>
           <p class="error" id="err"></p>
           <div class="actions"><button type="button" class="btn" data-act="back">← Regresar</button><button class="btn primary big" id="go">Conectar</button></div>
@@ -155,14 +167,34 @@ export function mount(el, { onDone }) {
     }
   }
 
+  async function forgot() {
+    const f = el.querySelector('#f');
+    const slug = slugify(f.slug.value);
+    const email = f.email.value.trim();
+    if (!slug || !email) return setErr('Escribe la cuenta del negocio y el correo del dueño.');
+    try {
+      const r = await api('/api/password/forgot', { method: 'POST', auth: false, body: { slug, email } });
+      if (!r.email) return setErr('El envío de correos no está activo. Pide a tu proveedor de K-POS que restablezca la contraseña.');
+      const code = await promptBox('Revisa tu correo', { label: 'Código de 6 dígitos', placeholder: '123456', ok: 'Continuar' });
+      if (!code) return;
+      const password = await promptBox('Nueva contraseña', { type: 'password', label: 'Mínimo 6 caracteres', ok: 'Cambiar' });
+      if (!password) return;
+      await api('/api/password/reset', { method: 'POST', auth: false, body: { slug, code, password } });
+      f.password.value = password;
+      toast('Contraseña actualizada');
+    } catch (err) { setErr(err.message); }
+  }
+
   const onClick = async (e) => {
     const a = e.target.closest('[data-act]');
     if (!a) return;
     const act = a.dataset.act;
     if (act === 'create') { step = 'type'; draw(); }
     else if (act === 'link') { step = 'link'; draw(); }
+    else if (act === 'switch') switchAccount(a.dataset.db);
     else if (act === 'type') { type = a.dataset.type; step = 'create'; draw(); }
     else if (act === 'back') { step = step === 'create' ? 'type' : 'welcome'; draw(); }
+    else if (act === 'forgot') forgot();
     else if (act === 'toggle-pass') {
       const p = el.querySelector('#by-pass');
       p.hidden = !p.hidden;

@@ -2,10 +2,13 @@
 import { S, on, get, list, sorted, mod, can, cfg, setMeta, available, openCashSession, save } from '../store.js';
 import {
   createOrder, addItem, setItemQty, setItemNote, sendOrder, payOrder, cancelItem, cancelOrder, discardIfEmpty,
-  liveItems, allItems, newItems, openOrders, orderForTable, orderTitle, setItemStatus,
+  liveItems, allItems, newItems, openOrders, orderForTable, orderTitle, setItemStatus, modsText, moveItems,
 } from '../orders.js';
+import { hasModifiers, pickModifiers } from '../modifiers.js';
 import { esc, money, qty, visual, toast, openModal, confirmBox, promptBox, numpad, timeHM, minutesAgo } from '../ui.js';
 import { PAY_METHODS } from '../shared/schema.js';
+import { authorize, auditRow } from '../auth.js';
+import { printReceipt, printerCfg } from '../printer.js';
 import { round2, round3 } from '../shared/util.js';
 
 const STATUS_TAG = {
@@ -114,6 +117,7 @@ export function mount(el, params, { go }) {
       ${visual(p || { emoji: '🏷️' }, 'sm')}
       <div class="l-info" data-act="${isNew ? 'note' : 'item-menu'}" data-id="${i.id}">
         <b>${esc(i.name)}</b>
+        ${i.mods?.length ? `<span class="l-mods">${esc(modsText(i.mods))}</span>` : ''}
         <small>${qty(i.qty, i.unit)} × ${money(i.price)}${i.note ? ` · <i>${esc(i.note)}</i>` : ''}</small>
         ${tag ? `<span class="tag ${color}">${tag}</span>` : ''}
       </div>
@@ -138,7 +142,13 @@ export function mount(el, params, { go }) {
 
   async function add(p) {
     let amount = 1;
-    if (mod('weight') && p.unit && p.unit !== 'pza') {
+    let extra = {};
+    if (hasModifiers(p)) {
+      const r = await pickModifiers(p);
+      if (!r) return;
+      amount = r.qty;
+      extra = { mods: r.mods, note: r.note };
+    } else if (mod('weight') && p.unit && p.unit !== 'pza') {
       amount = await weightPad(p);
       if (!amount) return;
     }
@@ -149,7 +159,7 @@ export function mount(el, params, { go }) {
       toast(av - already <= 0 ? `⚠️ ${p.name}: agotado en inventario` : `⚠️ Solo quedan ${qty(av - already, p.unit)} de ${p.name}`, 'warn');
     }
     await ensureOrder();
-    await addItem(order, p, amount);
+    await addItem(order, p, amount, extra);
     refreshOrder();
     const card = el.querySelector(`.card[data-id="${p.id}"]`);
     card?.classList.remove('flash');
@@ -260,59 +270,151 @@ export function mount(el, params, { go }) {
     drawAll();
   }
 
+  // Cobro: uno o varios pagos (mixto / dividir entre personas), propina y cambio.
   function payModal() {
     const o = order;
+    const pays = [];
     let method = 'efectivo';
+    let amount = '';
     let received = '';
+    let tip = 0;
+    let field = 'received';
     const total = () => Number(get('orders', o.id)?.total || 0);
+    const paid = () => round2(pays.reduce((t, p) => t + p.amount, 0));
+    const remaining = () => round2(Math.max(0, total() - paid()));
+    const amt = () => (amount === '' ? remaining() : Math.min(remaining(), parseFloat(amount) || 0));
     const session = openCashSession();
 
     const quick = () => {
-      const t = total();
+      const t = round2(amt() + tip);
       const bills = [20, 50, 100, 200, 500, 1000];
       const opts = [t, ...bills.map((b) => Math.ceil(t / b) * b)].filter((v, i, a) => v >= t && a.indexOf(v) === i).slice(0, 5);
       return opts.map((v) => `<button class="btn" data-act="bill" data-v="${v}">${v === t ? 'Exacto' : money(v)}</button>`).join('');
     };
     const draw = () => {
-      const t = total();
+      const a = amt();
       const r = parseFloat(received) || 0;
-      const change = method === 'efectivo' ? round2(r - t) : 0;
-      const okDisabled = method === 'efectivo' && r < t;
+      const change = method === 'efectivo' ? round2(r - a - tip) : 0;
+      const cashShort = method === 'efectivo' && received !== '' && r < a + tip;
+      const last = a >= remaining() - 0.001;
       m.setHtml(`<div class="pay">
-        <div class="pay-total"><small>Total a cobrar</small><b>${money(t)}</b>${o.discount ? `<small>Incluye descuento de ${money(o.discount)}</small>` : ''}</div>
+        <div class="pay-total"><small>${pays.length ? 'Resta por cobrar' : 'Total a cobrar'}</small><b>${money(remaining())}</b>
+          ${pays.length ? `<small>Total ${money(total())} · pagado ${money(paid())}</small>` : o.discount ? `<small>Incluye descuento de ${money(o.discount)}</small>` : ''}</div>
+        ${pays.length ? `<div class="pay-list">${pays.map((p, i) => `<div><span>${esc(PAY_METHODS[p.method])} ${money(p.amount)}${p.tip ? ` + propina ${money(p.tip)}` : ''}</span><button class="icon-btn" data-act="rm-pay" data-i="${i}">✕</button></div>`).join('')}</div>` : ''}
         <div class="seg big">${Object.entries(PAY_METHODS).map(([k, v]) => `<button class="${k === method ? 'on' : ''}" data-act="method" data-m="${k}">${k === 'efectivo' ? '💵' : k === 'tarjeta' ? '💳' : '📲'} ${v}</button>`).join('')}</div>
-        ${method === 'efectivo' ? `
-          <div class="np-quick">${quick()}</div>
-          <div class="pay-cash"><div><small>Recibido</small><b>${received ? money(r) : '—'}</b></div><div class="${change >= 0 ? 'ok' : 'bad'}"><small>Cambio</small><b>${received ? money(Math.max(0, change)) : '—'}</b></div></div>
-          <div class="np-keys compact">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'].map((k) => `<button class="np-key" data-act="k" data-k="${k}">${k}</button>`).join('')}</div>
-          ${session ? '' : '<p class="warn-box">⚠️ No hay caja abierta: el efectivo no quedará en un corte. Abre la caja en “Caja”.</p>'}` : '<p class="muted center">Confirma que el pago fue recibido.</p>'}
+        <div class="pay-cash">
+          <div class="${field === 'amount' ? 'focus' : ''}" data-act="field" data-f="amount"><small>Este pago</small><b>${money(a)}</b></div>
+          ${method === 'efectivo' ? `<div class="${field === 'received' ? 'focus' : ''}" data-act="field" data-f="received"><small>Recibido</small><b>${received ? money(r) : '—'}</b></div>
+          <div class="${cashShort ? 'bad' : 'ok'}"><small>Cambio</small><b>${received ? money(Math.max(0, change)) : '—'}</b></div>` : ''}
+        </div>
+        <div class="np-quick">
+          <button class="btn small" data-act="split">÷ Entre personas</button>
+          <button class="btn small" data-act="half">½</button>
+          <button class="btn small" data-act="all">Todo</button>
+        </div>
+        <div class="np-quick tips"><span class="muted">Propina:</span>${[0, 10, 15, 20].map((pc) => `<button class="btn small ${tip === round2((a * pc) / 100) ? 'on' : ''}" data-act="tip" data-p="${pc}">${pc ? `${pc}%` : 'Sin'}</button>`).join('')}<button class="btn small" data-act="tip-other">${tip && ![10, 15, 20].some((pc) => tip === round2((a * pc) / 100)) ? money(tip) : 'Otra'}</button></div>
+        ${method === 'efectivo' ? `<div class="np-quick">${quick()}</div>` : ''}
+        <div class="np-keys compact">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'].map((k) => `<button class="np-key" data-act="k" data-k="${k}">${k}</button>`).join('')}</div>
+        ${method === 'efectivo' && !session ? '<p class="warn-box">⚠️ No hay caja abierta: el efectivo no quedará en un corte. Abre la caja en “Caja”.</p>' : ''}
         <div class="actions">
-          ${can('cancel') ? '<button class="btn ghost" data-act="discount">🏷️ Descuento</button>' : ''}
-          <button class="btn pay big" data-act="confirm" ${okDisabled ? 'disabled' : ''}>✔ Cobrar ${money(t)}</button>
+          <button class="btn ghost" data-act="discount">🏷️ Descuento</button>
+          ${last ? '' : `<button class="btn primary" data-act="add-pay" ${a <= 0 || cashShort ? 'disabled' : ''}>＋ Agregar pago de ${money(a)}</button>`}
+          ${last ? `<button class="btn pay big" data-act="confirm" ${cashShort ? 'disabled' : ''}>✔ Cobrar ${money(a + tip)}</button>` : ''}
         </div></div>`);
     };
+    const current = () => {
+      const a = amt();
+      const r = method === 'efectivo' && received !== '' ? parseFloat(received) : a + tip;
+      return { method, amount: a, tip, received: r, change: method === 'efectivo' ? round2(r - a - tip) : 0 };
+    };
+    const resetCurrent = () => { amount = ''; received = ''; tip = 0; field = method === 'efectivo' ? 'received' : 'amount'; };
     const m = openModal({
       title: `Cobrar · ${orderTitle(o)}`,
       html: '',
       onClick: async (act, a) => {
-        if (act === 'method') { method = a.dataset.m; received = ''; }
-        else if (act === 'bill') received = a.dataset.v;
-        else if (act === 'k') {
+        if (act === 'method') { method = a.dataset.m; received = ''; field = method === 'efectivo' ? 'received' : 'amount'; }
+        else if (act === 'field') field = a.dataset.f;
+        else if (act === 'bill') { received = a.dataset.v; field = 'received'; }
+        else if (act === 'all') amount = '';
+        else if (act === 'half') { amount = String(round2(remaining() / 2)); received = ''; }
+        else if (act === 'split') {
+          const n = await numpad('¿Entre cuántas personas?', { decimals: false, quick: [2, 3, 4, 5, 6].map((v) => ({ label: String(v), value: v })) });
+          if (n && n > 1) { amount = String(round2(remaining() / n)); received = ''; }
+        } else if (act === 'tip') tip = round2((amt() * Number(a.dataset.p)) / 100);
+        else if (act === 'tip-other') {
+          const t = await numpad('Propina', { hint: 'Monto en pesos' });
+          if (t !== null) tip = round2(t);
+        } else if (act === 'k') {
           const k = a.dataset.k;
-          if (k === '⌫') received = received.slice(0, -1);
-          else if (!(k === '.' && received.includes('.')) && received.length < 9) received += k;
+          let v = field === 'amount' ? amount : received;
+          if (k === '⌫') v = v.slice(0, -1);
+          else if (!(k === '.' && v.includes('.')) && v.length < 9) v += k;
+          if (field === 'amount') amount = v; else received = v;
+        } else if (act === 'rm-pay') pays.splice(Number(a.dataset.i), 1);
+        else if (act === 'add-pay') {
+          pays.push(current());
+          resetCurrent();
         } else if (act === 'discount') {
-          const d = await numpad('Descuento', { hint: 'Monto en pesos. Para porcentaje usa los botones.', quick: [5, 10, 15, 20].map((p) => ({ label: `${p}%`, value: round2((Number(o.subtotal) * p) / 100) })) });
+          const who = await authorize('Aplicar descuento');
+          if (!who) return;
+          const d = await numpad('Descuento', { hint: 'Monto en pesos. Para porcentaje usa los botones.', quick: [5, 10, 15, 20, 50, 100].map((p) => ({ label: `${p}%`, value: round2((Number(o.subtotal) * p) / 100) })) });
           if (d === null) return;
           const cur = get('orders', o.id);
           const disc = Math.min(Number(cur.subtotal), Math.max(0, d));
-          await save([['orders', { ...cur, discount: disc, total: round2(Number(cur.subtotal) - disc) }]]);
+          await save([['orders', { ...cur, discount: disc, total: round2(Number(cur.subtotal) - disc) }], auditRow('discount', { ref: o.id, amount: disc, detail: orderTitle(o), by: who })]);
         } else if (act === 'confirm') {
-          const t = total();
-          const r = method === 'efectivo' ? parseFloat(received) || t : t;
-          const paid = await payOrder(get('orders', o.id), [{ method, amount: t, received: r, change: method === 'efectivo' ? round2(r - t) : 0 }]);
+          const all = [...pays, current()].filter((p) => p.amount > 0 || p.tip > 0);
+          const result = await payOrder(get('orders', o.id), all);
           m.close();
-          done(paid, method === 'efectivo' ? round2(r - t) : 0);
+          if (printerCfg().auto_receipt) printReceipt(result);
+          done(result, round2(all.reduce((t, p) => t + Math.max(0, p.change || 0), 0)));
+          return;
+        }
+        draw();
+      },
+    });
+    draw();
+  }
+
+  // Dividir la cuenta o pasar productos a otra cuenta/mesa.
+  function moveModal() {
+    const o = order;
+    const items = liveItems(o.id);
+    const sel = new Map();
+    const targets = openOrders().filter((x) => x.id !== o.id);
+    const draw = () => {
+      mm.setHtml(`<p class="muted">Elige qué productos pasar y cuántos.</p>
+        <div class="move-list">${items.map((i) => {
+          const n = sel.get(i.id) || 0;
+          return `<div class="line"><div class="l-info"><b>${esc(i.name)}</b>${i.mods?.length ? `<span class="l-mods">${esc(modsText(i.mods))}</span>` : ''}<small>${qty(i.qty, i.unit)} × ${money(i.price)}</small></div>
+            <div class="stepper"><button class="step red" data-act="mdec" data-id="${i.id}">−</button><span>${qty(n)}</span><button class="step green" data-act="minc" data-id="${i.id}">+</button></div></div>`;
+        }).join('')}</div>
+        <h3>¿A dónde?</h3>
+        <div class="menu-list">
+          <button data-act="to-new" ${sel.size ? '' : 'disabled'}>＋ Nueva cuenta${o.table_id ? ' en la misma mesa' : ''}</button>
+          ${targets.map((t) => `<button data-act="to" data-id="${t.id}" ${sel.size ? '' : 'disabled'}>→ ${esc(orderTitle(t))} <small class="muted">${money(t.total)}</small></button>`).join('')}
+        </div>`);
+    };
+    const mm = openModal({
+      title: 'Dividir / mover productos',
+      html: '',
+      onClick: async (act, a) => {
+        const it = a.dataset.id && items.find((i) => i.id === a.dataset.id);
+        if (act === 'minc' && it) sel.set(it.id, Math.min(Number(it.qty), (sel.get(it.id) || 0) + 1));
+        else if (act === 'mdec' && it) { const n = (sel.get(it.id) || 0) - 1; if (n > 0) sel.set(it.id, n); else sel.delete(it.id); }
+        else if (act === 'to' || act === 'to-new') {
+          let dest;
+          if (act === 'to') dest = get('orders', a.dataset.id);
+          else {
+            const name = await promptBox('Nombre de la nueva cuenta', { value: `Cuenta ${openOrders().filter((x) => x.table_id && x.table_id === o.table_id).length + 1}`, ok: 'Crear' });
+            if (name === null) return;
+            dest = await createOrder({ table_id: o.table_id, customer: name, kind: o.table_id ? 'mesa' : 'cuenta' });
+          }
+          await moveItems(get('orders', o.id), [...sel.entries()].map(([id, n]) => ({ item: get('order_items', id), qty: n })), dest);
+          mm.close();
+          toast('Productos movidos');
+          refreshOrder();
+          drawAll();
           return;
         }
         draw();
@@ -346,24 +448,34 @@ export function mount(el, params, { go }) {
       size: 'small',
       html: `<div class="menu-list">
         <button data-act="rename">✏️ Nombre / referencia</button>
-        ${tables.length ? '<button data-act="move">🔄 Cambiar de mesa</button>' : ''}
-        <button data-act="print">🖨️ Imprimir cuenta</button>
+        ${liveItems(o.id).length ? '<button data-act="split">✂️ Dividir cuenta / pasar productos</button>' : ''}
+        ${tables.length ? '<button data-act="move">🔄 Cambiar o unir mesa</button>' : ''}
+        <button data-act="print">🧾 Imprimir pre-cuenta</button>
         <button data-act="park">📌 Dejar abierta y empezar otra</button>
-        ${can('cancel') || !liveItems(o.id).some((i) => i.status !== 'new') ? '<button class="danger" data-act="cancel">🗑️ Cancelar cuenta</button>' : ''}
+        <button class="danger" data-act="cancel">🗑️ Cancelar cuenta</button>
       </div>`,
       onClick: async (act) => {
         m.close();
         if (act === 'rename') {
           const n = await promptBox('Nombre de la cuenta', { value: o.customer || '' });
           if (n !== null) await save([['orders', { ...get('orders', o.id), customer: n, kind: o.kind === 'mostrador' ? 'cuenta' : o.kind }]]);
-        } else if (act === 'move') {
-          const busy = new Set(openOrders().map((x) => x.table_id).filter(Boolean));
+        } else if (act === 'split') moveModal();
+        else if (act === 'move') {
+          const busy = new Map(openOrders().filter((x) => x.table_id && x.id !== o.id).map((x) => [x.table_id, x]));
           const mm = openModal({
-            title: 'Mover a mesa',
-            html: `<div class="table-grid">${tables.map((t) => `<button class="table-card ${busy.has(t.id) ? 'busy' : ''}" data-act="t" data-id="${t.id}" ${busy.has(t.id) ? 'disabled' : ''}><b>${esc(t.name)}</b></button>`).join('')}</div>`,
+            title: 'Cambiar o unir mesa',
+            html: `<p class="muted">Mesa libre: se cambia la cuenta. Mesa ocupada: se unen las cuentas.</p><div class="table-grid">${tables.filter((t) => t.id !== o.table_id).map((t) => `<button class="table-card ${busy.has(t.id) ? 'busy' : ''}" data-act="t" data-id="${t.id}"><b>${esc(t.name)}</b><small>${busy.has(t.id) ? `Unir · ${money(busy.get(t.id).total)}` : 'Libre'}</small></button>`).join('')}</div>`,
             onClick: async (a2, b) => {
               mm.close();
-              await save([['orders', { ...get('orders', o.id), table_id: b.dataset.id, kind: 'mesa' }]]);
+              const target = busy.get(b.dataset.id);
+              const cur = get('orders', o.id);
+              if (target) {
+                await moveItems(cur, liveItems(cur.id).map((i) => ({ item: i, qty: Number(i.qty) })), target);
+                await save([['orders', { ...get('orders', cur.id), deleted: 1 }]]);
+                toast('Mesas unidas');
+              } else {
+                await save([['orders', { ...cur, table_id: b.dataset.id, kind: 'mesa' }]]);
+              }
               go('pos', { table: b.dataset.id });
             },
           });
@@ -377,11 +489,13 @@ export function mount(el, params, { go }) {
           const sent = liveItems(o.id).some((i) => i.status !== 'new');
           let reason = '';
           if (sent) {
+            const who = await authorize(`Cancelar ${orderTitle(o)} (${money(o.total)})`);
+            if (!who) return;
             reason = await promptBox('Motivo de cancelación', { placeholder: 'Ej. cliente se fue', ok: 'Cancelar cuenta' });
             if (reason === null) return;
+            await cancelOrder(get('orders', o.id), { reason, returnStock: true, extra: [auditRow('cancel_order', { ref: o.id, amount: o.total, detail: `${orderTitle(o)}: ${reason}`, by: who })] });
           } else if (!(await confirmBox('¿Borrar esta cuenta?', { danger: true, ok: 'Borrar' }))) return;
-          if (sent) await cancelOrder(get('orders', o.id), { reason, returnStock: true });
-          else await save([['orders', { ...get('orders', o.id), deleted: 1 }], ...liveItems(o.id).map((i) => ['order_items', { ...i, deleted: 1 }])]);
+          if (!sent) await save([['orders', { ...get('orders', o.id), deleted: 1 }], ...liveItems(o.id).map((i) => ['order_items', { ...i, deleted: 1 }])]);
           order = null;
           await setMeta('current_order', null);
           if (tableId && mod('tables')) go('tables'); else drawAll();
@@ -397,37 +511,24 @@ export function mount(el, params, { go }) {
       size: 'small',
       html: `<div class="menu-list">
         ${item.status === 'ready' ? '<button data-act="served">✅ Marcar como entregado</button>' : ''}
-        ${can('cancel') ? '<button class="danger" data-act="cancel">❌ Cancelar producto</button>' : '<p class="muted">Pide a un encargado que cancele este producto.</p>'}
+        <button class="danger" data-act="cancel">❌ Cancelar producto${can('cancel') ? '' : ' (requiere encargado)'}</button>
       </div>`,
       onClick: async (act) => {
         m.close();
         if (act === 'served') await setItemStatus(item, 'served');
         if (act === 'cancel') {
+          const who = await authorize(`Cancelar ${qty(item.qty)} ${item.name} (${money(item.total)})`);
+          if (!who) return;
           const reason = await promptBox('Motivo', { placeholder: 'Ej. se equivocó el mesero', ok: 'Cancelar producto' });
           if (reason === null) return;
           const back = item.status === 'sent' ? true : await confirmBox('¿Regresar los insumos al inventario? (No si ya se preparó y se tira)', { ok: 'Sí, regresar' });
-          await cancelItem(get('orders', item.order_id), item, { reason, returnStock: back });
+          await cancelItem(get('orders', item.order_id), item, { reason, returnStock: back, extra: [auditRow('cancel_item', { ref: item.id, amount: item.total, detail: `${qty(item.qty)} ${item.name} · ${orderTitle(get('orders', item.order_id))}: ${reason}`, by: who })] });
         }
       },
     });
   }
 
-  function printTicket(o) {
-    const items = liveItems(o.id);
-    const pays = list('payments', (p) => p.order_id === o.id);
-    const c = cfg();
-    let area = document.getElementById('print-area');
-    if (!area) { area = document.createElement('div'); area.id = 'print-area'; document.body.append(area); }
-    area.innerHTML = `<div class="receipt">
-      <h3>${esc(c.name || '')}</h3>
-      <p>${new Date(o.closed_at || Date.now()).toLocaleString('es-MX')}<br>${esc(orderTitle(o))} · #${o.number}</p><hr>
-      ${items.map((i) => `<div class="r-row"><span>${qty(i.qty, i.unit)} ${esc(i.name)}</span><span>${money(i.total)}</span></div>`).join('')}<hr>
-      ${o.discount ? `<div class="r-row"><span>Descuento</span><span>−${money(o.discount)}</span></div>` : ''}
-      <div class="r-row big"><span>TOTAL</span><span>${money(o.total)}</span></div>
-      ${pays.map((p) => `<div class="r-row"><span>${esc(PAY_METHODS[p.method] || p.method)}</span><span>${money(p.received)}</span></div>${p.change_given ? `<div class="r-row"><span>Cambio</span><span>${money(p.change_given)}</span></div>` : ''}`).join('')}
-      <p class="center">${esc(c.ticket_footer || '')}</p></div>`;
-    window.print();
-  }
+  const printTicket = (o) => printReceipt(o);
 
   const onClick = async (e) => {
     const a = e.target.closest('[data-act]');

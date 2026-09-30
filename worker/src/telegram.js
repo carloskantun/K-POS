@@ -76,6 +76,7 @@ export async function afterPush(env, tenantId, applied) {
       `Ventas en efectivo: ${money(s.sales || 0)}`,
       s.ins ? `Entradas: ${money(s.ins)}` : '',
       s.outs ? `Salidas: ${money(s.outs)}` : '',
+      s.cash_tips ? `Propinas en efectivo: ${money(s.cash_tips)}` : '',
       `<b>Esperado: ${money(c.r.expected_cash)}</b>`,
       `<b>Contado: ${money(c.r.counted_cash)}</b>`,
       tag,

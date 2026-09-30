@@ -1,7 +1,8 @@
 // Reportes del día: ventas, métodos de pago, productos, usuarios, caja e inventario.
 import { S, on, list, cfg, branchId } from '../store.js';
 import { api } from '../sync.js';
-import { esc, money, qty, toast } from '../ui.js';
+import { esc, money, qty, toast, promptBox } from '../ui.js';
+import { toCSV, download } from '../shared/csv.js';
 import { computeSummary } from '../shared/report.js';
 import { PAY_METHODS } from '../shared/schema.js';
 import { localDate, dayRange, shiftDate } from '../shared/util.js';
@@ -15,7 +16,7 @@ export function mount(el) {
 
   const localData = () => ({
     orders: list('orders'), order_items: list('order_items'), payments: list('payments'),
-    cash_sessions: list('cash_sessions'), cash_moves: list('cash_moves'), products: list('products'), users: list('users'),
+    cash_sessions: list('cash_sessions'), cash_moves: list('cash_moves'), products: list('products'), users: list('users'), audit: list('audit'),
     stock: [...S.stock.entries()].map(([k, qty2]) => { const [b, p] = k.split('|'); return { branch_id: b, product_id: p, qty: qty2 }; }),
     tz: tz(),
   });
@@ -53,6 +54,7 @@ export function mount(el) {
         <div class="kpi"><small>Tickets</small><b>${s.tickets}</b></div>
         <div class="kpi"><small>Ticket promedio</small><b>${money(s.average)}</b></div>
         <div class="kpi ${s.cancelled_orders || s.cancelled_items ? 'bad' : ''}"><small>Cancelaciones</small><b>${s.cancelled_orders + s.cancelled_items}</b></div>
+        ${s.tips ? `<div class="kpi"><small>Propinas</small><b>${money(s.tips)}</b></div>` : ''}
       </div>
       <div class="kpis">${Object.entries(s.by_method).map(([k, v]) => `<div class="kpi"><small>${esc(PAY_METHODS[k] || k)}</small><b>${money(v)}</b></div>`).join('') || ''}</div>
       <div class="report-grid">
@@ -63,16 +65,22 @@ export function mount(el) {
           <table class="data"><tbody>${s.by_product.slice(0, 15).map((p) => `<tr><td>${esc(p.name)}</td><td class="r">${qty(p.qty, p.unit)}</td><td class="r">${money(p.total)}</td></tr>`).join('') || '<tr><td class="empty">Sin ventas</td></tr>'}</tbody></table>
         </section>
         <section class="panel"><h3>Por usuario</h3>
-          <table class="data"><tbody>${s.by_user.map((u) => `<tr><td>${esc(u.name)}</td><td class="r">${u.tickets} tickets</td><td class="r">${money(u.total)}</td></tr>`).join('') || '<tr><td class="empty">—</td></tr>'}</tbody></table>
+          <table class="data"><tbody>${s.by_user.map((u) => `<tr><td>${esc(u.name)}</td><td class="r">${u.tickets} tickets</td><td class="r">${money(u.total)}${u.tips ? `<br><small class="muted">+${money(u.tips)} propina</small>` : ''}</td></tr>`).join('') || '<tr><td class="empty">—</td></tr>'}</tbody></table>
         </section>
         <section class="panel"><h3>Caja</h3>
           ${s.cash.map((c) => `<p>${c.status === 'open' ? `🟢 Abierta (${esc(c.opened_by)}) · debe haber <b>${money(c.expected)}</b>` : `✂️ Corte (${esc(c.closed_by)}) · esperado ${money(c.expected)}, contado ${money(c.counted)} → <b class="${c.diff === 0 ? 'num-pos' : 'num-neg'}">${c.diff === 0 ? 'cuadra' : (c.diff > 0 ? '+' : '') + money(c.diff)}</b>`}</p>`).join('') || '<p class="empty">Sin movimientos de caja</p>'}
+        </section>
+        <section class="panel"><h3>🔒 Cancelaciones y descuentos</h3>
+          ${(s.audit || []).map((a) => `<p><small class="muted">${new Date(a.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</small> <b>${esc({ cancel_item: 'Canceló', cancel_order: 'Canceló cuenta', discount: 'Descuento', cash_out: 'Salida', reopen: 'Reabrió', stock_adjust: 'Ajuste' }[a.action] || a.action)}</b> ${a.amount ? money(a.amount) : ''} · ${esc(a.detail)} <small class="muted">(${esc(a.user)}${a.authorized && a.authorized !== a.user ? `, autorizó ${esc(a.authorized)}` : ''})</small></p>`).join('') || '<p class="empty">Sin cancelaciones</p>'}
         </section>
         <section class="panel"><h3>Stock bajo</h3>
           ${s.low_stock.map((i) => `<p>🔴 ${esc(i.name)}: <b>${qty(i.qty, i.unit)}</b> <small class="muted">(mín. ${qty(i.min, i.unit)})</small></p>`).join('') || '<p class="empty">✅ Todo en orden</p>'}
         </section>
       </div>
-      ${!S.meta.demo ? `<div class="actions left"><button class="btn" data-act="telegram">📨 Enviar resumen a Telegram</button></div>` : ''}
+      <div class="actions left">
+        <button class="btn" data-act="csv">⬇ Ventas del día (CSV)</button>
+        ${!S.meta.demo ? '<button class="btn" data-act="csv-range">⬇ Ventas por rango (CSV)</button><button class="btn" data-act="telegram">📨 Enviar resumen a Telegram</button>' : ''}
+      </div>
     </div>`;
   }
 
@@ -84,6 +92,19 @@ export function mount(el) {
     else if (act === 'next') date = shiftDate(date, 1);
     else if (act === 'today') date = localDate(Date.now(), tz());
     else if (act === 'scope') scope = a.dataset.s;
+    else if (act === 'csv') { exportLocal(); return; }
+    else if (act === 'csv-range') {
+      const from = await promptBox('Desde', { type: 'date', value: date.slice(0, 8) + '01', ok: 'Siguiente' });
+      if (!from) return;
+      const to = await promptBox('Hasta', { type: 'date', value: date, ok: 'Descargar' });
+      if (!to) return;
+      try {
+        const res = await fetch(`/api/export/sales?from=${from}&to=${to}`, { headers: { authorization: `Bearer ${S.meta.device.token}` } });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'No se pudo exportar');
+        download(`ventas-${from}_${to}.csv`, await res.text());
+      } catch (err) { toast(err.message, 'error'); }
+      return;
+    }
     else if (act === 'telegram') {
       try {
         const r = await api('/api/telegram/test', { method: 'POST', body: { kind: 'today' } });
@@ -94,6 +115,25 @@ export function mount(el) {
     await fetchRemote();
     draw();
   };
+  // Exporta las ventas del día seleccionado con los datos del dispositivo (funciona sin internet).
+  function exportLocal() {
+    const { from, to } = dayRange(date, tz());
+    const orders = list('orders', (o) => ['paid', 'cancelled'].includes(o.status) && o.closed_at >= from && o.closed_at < to).sort((a, b) => a.closed_at - b.closed_at);
+    const rows = [];
+    for (const o of orders) {
+      const pays = list('payments', (p) => p.order_id === o.id);
+      const t = o.table_id && S.data.tables.get(o.table_id);
+      list('order_items', (i) => i.order_id === o.id).forEach((i, k) => rows.push({
+        fecha: date, hora: new Date(o.closed_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }), ticket: o.number,
+        cuenta: [t?.name, o.customer].filter(Boolean).join(' · '), estado: i.status === 'cancelled' || o.status === 'cancelled' ? 'cancelado' : 'pagado',
+        producto: i.name, extras: (i.mods || []).map((m) => m.name).join(', '), cantidad: i.qty, precio: i.price, importe: i.total,
+        mesero: S.data.users.get(o.user_id)?.name || '', metodo_pago: [...new Set(pays.map((p) => PAY_METHODS[p.method] || p.method))].join(' + '),
+        total_ticket: k === 0 ? o.total : '', descuento: k === 0 && o.discount ? o.discount : '', propina: k === 0 ? pays.reduce((s2, p) => s2 + (Number(p.tip) || 0), 0) || '' : '',
+      }));
+    }
+    download(`ventas-${date}.csv`, toCSV(rows, ['fecha', 'hora', 'ticket', 'cuenta', 'estado', 'producto', 'extras', 'cantidad', 'precio', 'importe', 'mesero', 'metodo_pago', 'total_ticket', 'descuento', 'propina']));
+  }
+
   const onChange = async (e) => { if (e.target.id === 'date' && e.target.value) { date = e.target.value; await fetchRemote(); draw(); } };
   el.addEventListener('click', onClick);
   el.addEventListener('change', onChange);

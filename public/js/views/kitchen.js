@@ -1,6 +1,7 @@
 // Pantalla de comandas (cocina / barra / taquero): qué preparar, cuántos en total y desde hace cuánto.
 import { S, on, get, list, setMeta, save } from '../store.js';
-import { orderTitle } from '../orders.js';
+import { orderTitle, modsText } from '../orders.js';
+import { printKitchen } from '../printer.js';
 import { esc, qty, beep, minutesAgo, visual } from '../ui.js';
 
 const STATION_LABEL = { cocina: '🔥 Cocina', barra: '🍹 Barra' };
@@ -60,8 +61,8 @@ export function mount(el) {
           return `<article class="kds-card ${min >= 20 ? 'late' : min >= 10 ? 'warn' : ''}">
             <header><b>${esc(orderTitle(o))}</b><span class="kds-time">${min} min</span></header>
             ${u ? `<small class="muted">${esc(u.name)}</small>` : ''}
-            <ul>${items.map((i) => `<li data-act="ready" data-id="${i.id}"><span class="kq">${qty(i.qty, i.unit)}</span><span>${esc(i.name)}${i.note ? `<em>${esc(i.note)}</em>` : ''}</span></li>`).join('')}</ul>
-            <button class="btn pay" data-act="all-ready" data-id="${o.id}">✔ Todo listo</button>
+            <ul>${items.map((i) => `<li data-act="ready" data-id="${i.id}"><span class="kq">${qty(i.qty, i.unit)}</span><span>${esc(i.name)}${i.mods?.length ? `<strong class="kmods">${esc(modsText(i.mods))}</strong>` : ''}${i.note ? `<em>${esc(i.note)}</em>` : ''}</span></li>`).join('')}</ul>
+            <div class="kds-actions"><button class="btn pay" data-act="all-ready" data-id="${o.id}">✔ Todo listo</button><button class="btn" data-act="reprint" data-id="${o.id}" title="Imprimir comanda">🖨️</button></div>
           </article>`;
         }).join('') || '<div class="kds-empty">✨ Sin comandas pendientes</div>'}
       </div>
@@ -78,8 +79,8 @@ export function mount(el) {
     const now = Date.now();
     if (a.dataset.act === 'station') {
       station = a.dataset.s;
-      await setMeta('device', { ...S.meta.device, station });
       draw();
+      await setMeta('device', { ...S.meta.device, station });
     } else if (a.dataset.act === 'ready') {
       const i = get('order_items', a.dataset.id);
       a.classList.add('done');
@@ -87,6 +88,9 @@ export function mount(el) {
     } else if (a.dataset.act === 'all-ready') {
       const items = list('order_items', (i) => i.order_id === a.dataset.id && i.status === 'sent' && match(i));
       await save(items.map((i) => ['order_items', { ...i, status: 'ready', ready_at: now }]));
+    } else if (a.dataset.act === 'reprint') {
+      const items = list('order_items', (i) => i.order_id === a.dataset.id && i.status === 'sent' && match(i));
+      printKitchen(get('orders', a.dataset.id), items, station === 'all' ? '' : station);
     } else if (a.dataset.act === 'served') {
       const items = list('order_items', (i) => i.order_id === a.dataset.id && i.status === 'ready' && match(i));
       await save(items.map((i) => ['order_items', { ...i, status: 'served' }]));

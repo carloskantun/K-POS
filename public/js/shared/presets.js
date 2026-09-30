@@ -38,10 +38,10 @@ export const PRESETS = {
     modules: { tables: true, kitchen: true, waiters: true, recipes: true },
     categories: [['comida', 'Platillos', '🍛', '#ef4444'], ['desayunos', 'Desayunos', '🍳', '#f59e0b'], ['bebidas', 'Bebidas', '🥤', '#3b82f6']],
     products: [
-      p('chilaquiles', 'Chilaquiles', '🍳', 95, 'desayunos', { station: 'cocina' }),
+      p('chilaquiles', 'Chilaquiles', '🍳', 95, 'desayunos', { station: 'cocina', mods: [{ name: 'Salsa', required: true, max: 1, options: [['Verde', 0], ['Roja', 0], ['Divorciados', 0]] }, { name: 'Con', required: false, max: 0, options: [['Huevo', 20], ['Pollo', 30], ['Arrachera', 60]] }] }),
       p('molletes', 'Molletes', '🥖', 75, 'desayunos', { station: 'cocina' }),
       p('enchiladas', 'Enchiladas', '🌯', 120, 'comida', { station: 'cocina' }),
-      p('hamburguesa', 'Hamburguesa', '🍔', 140, 'comida', { station: 'cocina' }),
+      p('hamburguesa', 'Hamburguesa', '🍔', 140, 'comida', { station: 'cocina', mods: [{ name: 'Término', required: true, max: 1, options: [['Medio', 0], ['3/4', 0], ['Bien cocida', 0]] }] }),
       p('sopa', 'Sopa del día', '🍲', 60, 'comida', { station: 'cocina' }),
       p('ensalada', 'Ensalada', '🥗', 85, 'comida', { station: 'cocina' }),
       p('cafe', 'Café americano', '☕', 35, 'bebidas', { station: 'barra' }),
@@ -52,18 +52,52 @@ export const PRESETS = {
     tables: 10,
   },
   bar: {
-    label: 'Bar / Cantina', emoji: '🍻',
+    label: 'Bar / Restaurante-bar', emoji: '🎸',
     modules: { tables: true, kitchen: true, waiters: true, recipes: true },
-    categories: [['cervezas', 'Cervezas', '🍺', '#f59e0b'], ['tragos', 'Tragos', '🍸', '#8b5cf6'], ['botanas', 'Botanas', '🍟', '#ef4444']],
+    categories: [
+      ['cervezas', 'Cervezas', '🍺', '#f59e0b'], ['cocteles', 'Cocteles', '🍹', '#ec4899'], ['tragos', 'Tragos', '🥃', '#8b5cf6'],
+      ['botanas', 'Botanas', '🍟', '#ef4444'], ['comida', 'Hamburguesas', '🍔', '#b45309'], ['sin', 'Sin alcohol', '🥤', '#3b82f6'],
+      ['entrada', 'Cover', '🎸', '#0f172a'],
+    ],
     products: [
-      p('cerveza', 'Cerveza', '🍺', 45, 'cervezas', { track: 1, min: 24, stock: 120, cost: 18 }),
-      p('cubeta', 'Cubeta (6 cervezas)', '🪣', 240, 'cervezas', { recipe: [['cerveza', 6]] }),
-      p('michelada', 'Michelada', '🍹', 75, 'cervezas', { station: 'barra', recipe: [['cerveza', 1]] }),
-      p('tequila', 'Tequila (caballito)', '🥃', 70, 'tragos', { station: 'barra' }),
+      p('corona', 'Corona', '🍺', 45, 'cervezas', { track: 1, min: 24, stock: 120, cost: 18 }),
+      p('victoria', 'Victoria', '🍺', 45, 'cervezas', { track: 1, min: 24, stock: 120, cost: 18 }),
+      p('indio', 'Indio', '🍺', 45, 'cervezas', { track: 1, min: 24, stock: 96, cost: 18 }),
+      p('artesanal', 'Cerveza artesanal', '🍻', 85, 'cervezas', { track: 1, min: 12, stock: 36, cost: 40 }),
+      p('cubeta', 'Cubeta (6 cervezas)', '🪣', 240, 'cervezas', {
+        mods: [{ name: 'Marca', required: true, max: 1, options: [['Corona', 0, 'corona', 6], ['Victoria', 0, 'victoria', 6], ['Indio', 0, 'indio', 6]] }],
+      }),
+      p('michelada', 'Michelada', '🍹', 75, 'cocteles', {
+        station: 'barra',
+        mods: [
+          { name: 'Cerveza', required: true, max: 1, options: [['Corona', 0, 'corona', 1], ['Victoria', 0, 'victoria', 1], ['Indio', 0, 'indio', 1]] },
+          { name: 'Preparación', required: true, max: 1, options: [['Natural', 0], ['Clamato', 10], ['Cubana', 10]] },
+        ],
+      }),
+      p('margarita', 'Margarita', '🍸', 110, 'cocteles', { station: 'barra', mods: [{ name: 'Sabor', required: true, max: 1, options: [['Limón', 0], ['Mango', 0], ['Tamarindo', 0], ['Fresa', 0]] }] }),
+      p('mojito', 'Mojito', '🍹', 110, 'cocteles', { station: 'barra' }),
+      p('tequila', 'Tequila (caballito)', '🥃', 70, 'tragos', { station: 'barra', mods: [{ name: 'Servir', required: false, max: 1, options: [['Derecho', 0], ['Con sangrita', 10]] }] }),
       p('mezcal', 'Mezcal', '🥃', 85, 'tragos', { station: 'barra' }),
-      p('cuba', 'Cuba libre', '🍸', 90, 'tragos', { station: 'barra' }),
-      p('papas', 'Papas a la francesa', '🍟', 80, 'botanas', { station: 'cocina' }),
-      p('alitas', 'Alitas (10 pzas)', '🍗', 150, 'botanas', { station: 'cocina' }),
+      p('whisky', 'Whisky', '🥃', 110, 'tragos', { station: 'barra', mods: [{ name: 'Servir', required: true, max: 1, options: [['Derecho', 0], ['En las rocas', 0], ['Con agua mineral', 0]] }] }),
+      p('alitas', 'Alitas (10 pzas)', '🍗', 165, 'botanas', {
+        station: 'cocina',
+        mods: [
+          { name: 'Salsa', required: true, max: 2, options: [['BBQ', 0], ['Búfalo', 0], ['Mango habanero', 0], ['Lemon pepper', 0]] },
+          { name: 'Extras', required: false, max: 0, options: [['Apio y zanahoria', 15], ['Aderezo ranch', 15]] },
+        ],
+      }),
+      p('papas', 'Papas a la francesa', '🍟', 80, 'botanas', { station: 'cocina', mods: [{ name: 'Extras', required: false, max: 0, options: [['Queso', 20], ['Tocino', 25]] }] }),
+      p('nachos', 'Nachos', '🧀', 120, 'botanas', { station: 'cocina' }),
+      p('hamburguesa', 'Hamburguesa de la casa', '🍔', 160, 'comida', {
+        station: 'cocina',
+        mods: [
+          { name: 'Término', required: true, max: 1, options: [['Medio', 0], ['3/4', 0], ['Bien cocida', 0]] },
+          { name: 'Extras', required: false, max: 0, options: [['Tocino', 25], ['Queso extra', 15], ['Jalapeños', 10]] },
+        ],
+      }),
+      p('refresco', 'Refresco', '🥤', 35, 'sin', { track: 1, min: 12, stock: 48, cost: 14 }),
+      p('agua', 'Agua natural', '💧', 25, 'sin', { track: 1, min: 12, stock: 48, cost: 8 }),
+      p('cover', 'Cover', '🎸', 100, 'entrada'),
     ],
     tables: 12,
   },
@@ -189,6 +223,10 @@ export function buildSeed({ type, tenantId, businessName, ownerName, pin, timezo
       station: x.station || '', track_stock: x.track ? 1 : 0, stock_min: x.min ?? 0,
       recipe: (x.recipe || []).map(([k, qty]) => ({ product_id: ids[k], qty })), sort: i,
       active: 1, sellable: x.sellable ?? 1,
+      modifiers: (x.mods || []).map((g) => ({
+        id: uid(), name: g.name, required: !!g.required, max: g.max ?? null,
+        options: g.options.map(([name, price, key, qty]) => ({ id: uid(), name, price, ...(key ? { product_id: ids[key], qty } : {}) })),
+      })),
     });
     if (x.track && x.stock) {
       add('stock_moves', {

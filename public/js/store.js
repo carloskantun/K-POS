@@ -37,13 +37,42 @@ export function emit(tables) {
   }, 16);
 }
 
-const channel = 'BroadcastChannel' in self ? new BroadcastChannel('kpos') : null;
+// Un dispositivo puede tener varios negocios (ej. dueño con dos sucursales o dos marcas):
+// cada uno vive en su propia base local.
+const ls = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* sin almacenamiento */ } },
+};
+export const activeDb = () => ls.get('kpos.active', 'kpos');
+export const accounts = () => ls.get('kpos.accounts', []);
+export function rememberAccount(name) {
+  const db = activeDb();
+  ls.set('kpos.accounts', [...accounts().filter((a) => a.db !== db), { db, name }]);
+}
+export function switchAccount(db) {
+  ls.set('kpos.active', db);
+  location.hash = '';
+  location.reload();
+}
+export function newAccount() {
+  switchAccount(`kpos-${Date.now().toString(36)}`);
+}
+export function forgetAccount(db) {
+  const rest = accounts().filter((a) => a.db !== db);
+  ls.set('kpos.accounts', rest);
+  ls.set('kpos.active', rest[0]?.db || 'kpos');
+}
+
+const channel = 'BroadcastChannel' in self ? new BroadcastChannel(`kpos:${activeDb()}`) : null;
 let pushHook = () => {};
 export const setPushHook = (fn) => { pushHook = fn; };
 
 export async function init() {
-  await db.open('kpos');
+  await db.open(activeDb());
   S.meta = await db.getMeta();
+  if (S.meta.tenant) rememberAccount(S.meta.tenant.name);
+  // Pide al navegador no borrar los datos locales aunque falte espacio o no se use la app en días.
+  try { S.persisted = await navigator.storage?.persist?.(); } catch { S.persisted = false; }
   await loadAll();
   if (S.meta.user_id) S.user = S.data.users.get(S.meta.user_id) || null;
   await prune();
@@ -238,6 +267,7 @@ export async function enqueueEverything() {
 export async function resetDevice() {
   await db.wipe();
   channel?.postMessage({ type: 'reload' });
+  forgetAccount(activeDb());
 }
 
 export function login(user) {

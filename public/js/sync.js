@@ -46,6 +46,7 @@ async function pullOnce() {
   let since = S.meta.cursor || 0;
   for (let guard = 0; guard < 50; guard++) {
     const res = await api(`/api/sync/pull?since=${since}`);
+    if (res.live && !S.live && !ws) connectLive();
     await applyRemote(res.changes, { stock: res.stock });
     since = res.cursor;
     await setMeta('cursor', since);
@@ -70,12 +71,45 @@ export async function syncNow() {
     S.lastSync = Date.now();
   } catch (e) {
     if (e.status === 401) S.syncError = 'Dispositivo desvinculado';
+    else if (e.status === 402) S.syncError = 'Cuenta suspendida';
     else { S.online = false; S.syncError = null; }
   } finally {
     running = false;
     S.syncing = false;
     emit(['_sync']);
   }
+}
+
+// Canal en tiempo real: el servidor avisa cuando otro dispositivo subió cambios.
+let ws = null;
+let wsRetry = 1000;
+let wsPing = null;
+function connectLive() {
+  if (!canSync() || !('WebSocket' in self)) return;
+  const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/live?token=${encodeURIComponent(S.meta.device.token)}`;
+  try { ws = new WebSocket(url); } catch { return; }
+  ws.onopen = () => {
+    S.live = true;
+    wsRetry = 1000;
+    clearInterval(wsPing);
+    wsPing = setInterval(() => { try { ws.send('ping'); } catch { /* cerrado */ } }, 25000);
+  };
+  ws.onmessage = (e) => {
+    if (e.data === 'pong') return;
+    try {
+      const m = JSON.parse(e.data);
+      if (m.by !== S.meta.device?.id) syncNow();
+    } catch { /* mensaje desconocido */ }
+  };
+  ws.onclose = (e) => {
+    S.live = false;
+    ws = null;
+    clearInterval(wsPing);
+    if (e.code === 1008 || e.code === 4001) return;
+    // El servidor local (hub) no tiene tiempo real: se queda con la consulta periódica.
+    wsRetry = Math.min(wsRetry * 2, 30000);
+    setTimeout(() => { if (!ws) connectLive(); }, wsRetry);
+  };
 }
 
 export function startSync() {
@@ -86,7 +120,7 @@ export function startSync() {
   const tick = () => {
     clearTimeout(loopTimer);
     if (document.visibilityState === 'visible') syncNow();
-    loopTimer = setTimeout(tick, PULL_EVERY);
+    loopTimer = setTimeout(tick, S.live ? 20000 : PULL_EVERY);
   };
   window.addEventListener('online', () => { S.online = true; syncNow(); });
   window.addEventListener('offline', () => { S.online = false; emit(['_sync']); });

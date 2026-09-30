@@ -16,7 +16,7 @@ export async function loadSummary(env, tenantId, { date, tz, branchId = null }) 
   const { from, to } = dayRange(date, tz);
   const DB = env.DB;
   const orderFilter = "tenant_id = ? AND deleted = 0 AND ((closed_at >= ? AND closed_at < ?) OR status = 'open')";
-  const [orders, items, payments, sessions, cashMoves, products, users, branches, stock] = await Promise.all([
+  const [orders, items, payments, sessions, cashMoves, products, users, branches, stock, audit] = await Promise.all([
     all(DB.prepare(`SELECT * FROM orders WHERE ${orderFilter}`).bind(tenantId, from, to), 'orders'),
     all(DB.prepare(`SELECT * FROM order_items WHERE tenant_id = ? AND (order_id IN (SELECT id FROM orders WHERE ${orderFilter}) OR (status = 'cancelled' AND updated_at >= ? AND updated_at < ?))`).bind(tenantId, tenantId, from, to, from, to), 'order_items'),
     all(DB.prepare(`SELECT * FROM payments WHERE tenant_id = ? AND (order_id IN (SELECT id FROM orders WHERE tenant_id = ? AND closed_at >= ? AND closed_at < ?) OR cash_session_id IN (SELECT id FROM cash_sessions WHERE tenant_id = ? AND (status = 'open' OR (closed_at >= ? AND closed_at < ?))))`).bind(tenantId, tenantId, from, to, tenantId, from, to), 'payments'),
@@ -26,9 +26,10 @@ export async function loadSummary(env, tenantId, { date, tz, branchId = null }) 
     all(DB.prepare('SELECT id, name, role, deleted FROM users WHERE tenant_id = ?').bind(tenantId), 'users'),
     all(DB.prepare('SELECT id, name, deleted FROM branches WHERE tenant_id = ?').bind(tenantId), 'branches'),
     stockLevels(env, tenantId),
+    all(DB.prepare('SELECT * FROM audit WHERE tenant_id = ? AND created_at >= ? AND created_at < ?').bind(tenantId, from, to), 'audit'),
   ]);
   const summary = computeSummary(
-    { orders, order_items: items, payments, cash_sessions: sessions, cash_moves: cashMoves, products, users, stock, tz },
+    { orders, order_items: items, payments, cash_sessions: sessions, cash_moves: cashMoves, products, users, stock, audit, tz },
     { from, to, branchId },
   );
   summary.date = date;
@@ -48,6 +49,7 @@ export function formatSummary(s, { businessName, currency = 'MXN', title }) {
   L.push(`💰 <b>Ventas: ${m(s.total)}</b>`);
   L.push(`🧾 Tickets: ${s.tickets} · Promedio: ${m(s.average)}`);
   for (const [k, v] of Object.entries(s.by_method)) L.push(`   • ${esc(PAY_METHODS[k] || k)}: ${m(v)}`);
+  if (s.tips) L.push(`🤝 Propinas: ${m(s.tips)}`);
   if (s.discount) L.push(`🏷️ Descuentos: ${m(s.discount)}`);
   if (s.cancelled_orders || s.cancelled_items) L.push(`❌ Cancelaciones: ${s.cancelled_orders} cuentas, ${s.cancelled_items} productos (${m(s.cancelled_amount)})`);
   if (s.open_orders) L.push(`🕒 Cuentas abiertas ahora: ${s.open_orders}`);
@@ -60,7 +62,15 @@ export function formatSummary(s, { businessName, currency = 'MXN', title }) {
   if (s.by_user.length > 1) {
     L.push('');
     L.push('<b>👤 Por usuario</b>');
-    s.by_user.forEach((u) => L.push(`• ${esc(u.name)}: ${u.tickets} tickets — ${m(u.total)}`));
+    s.by_user.forEach((u) => L.push(`• ${esc(u.name)}: ${u.tickets} tickets — ${m(u.total)}${u.tips ? ` (propinas ${m(u.tips)})` : ''}`));
+  }
+  const sensitive = (s.audit || []).filter((a) => a.action !== 'stock_adjust');
+  if (sensitive.length) {
+    L.push('');
+    L.push('<b>🔒 Cancelaciones y descuentos</b>');
+    const labels = { cancel_item: 'Canceló', cancel_order: 'Canceló cuenta', discount: 'Descuento', cash_out: 'Salida', reopen: 'Reabrió' };
+    sensitive.slice(0, 15).forEach((a) => L.push(`• ${esc(labels[a.action] || a.action)} ${a.amount ? m(a.amount) : ''} — ${esc(a.detail)} (${esc(a.user)}${a.authorized && a.authorized !== a.user ? `, autorizó ${esc(a.authorized)}` : ''})`));
+    if (sensitive.length > 15) L.push(`… y ${sensitive.length - 15} más`);
   }
   if (s.cash.length) {
     L.push('');

@@ -37,10 +37,12 @@ export function randomCode(len = 6) {
 // Devuelve el dispositivo autenticado o null.
 export async function authDevice(request, env) {
   const h = request.headers.get('authorization') || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7).trim() : '';
+  // Los WebSocket del navegador no pueden mandar encabezados: en /api/live el token va en la URL.
+  const url = new URL(request.url);
+  const token = h.startsWith('Bearer ') ? h.slice(7).trim() : url.pathname === '/api/live' ? url.searchParams.get('token') || '' : '';
   if (!token) return null;
   const dev = await env.DB.prepare(
-    'SELECT d.id, d.tenant_id, d.name, t.slug, t.name AS tenant_name FROM devices d JOIN tenants t ON t.id = d.tenant_id WHERE d.token_hash = ? AND d.revoked = 0',
+    'SELECT d.id, d.tenant_id, d.name, t.slug, t.name AS tenant_name, t.status FROM devices d JOIN tenants t ON t.id = d.tenant_id WHERE d.token_hash = ? AND d.revoked = 0',
   ).bind(tokenHash(token)).first();
   return dev || null;
 }

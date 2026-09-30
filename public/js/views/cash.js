@@ -4,6 +4,7 @@ import { esc, money, toast, numpad, promptBox, confirmBox, timeHM, openModal } f
 import { expectedCash } from '../shared/report.js';
 import { PAY_METHODS } from '../shared/schema.js';
 import { uid, round2 } from '../shared/util.js';
+import { auditRow } from '../auth.js';
 
 const DENOMS = [1000, 500, 200, 100, 50, 20, 10, 5, 2, 1, 0.5];
 
@@ -30,6 +31,7 @@ export function mount(el) {
         <div class="kpi"><small>Fondo inicial</small><b>${money(e.opening)}</b></div>
         <div class="kpi"><small>Ventas en efectivo</small><b>${money(e.sales)}</b></div>
         <div class="kpi"><small>Entradas / Salidas</small><b>${money(e.ins)} / ${money(e.outs)}</b></div>
+        ${e.cash_tips ? `<div class="kpi"><small>Propinas en efectivo</small><b>${money(e.cash_tips)}</b></div>` : ''}
         <div class="kpi hl"><small>Debe haber en caja</small><b>${money(e.expected)}</b></div>
       </div>
       <div class="kpis">${Object.entries(e.methods).filter(([k]) => k !== 'efectivo').map(([k, v]) => `<div class="kpi"><small>${esc(PAY_METHODS[k] || k)}</small><b>${money(v)}</b></div>`).join('')}
@@ -108,9 +110,11 @@ export function mount(el) {
     } else if ((act === 'in' || act === 'out') && s) {
       const n = await numpad(act === 'in' ? 'Entrada de efectivo' : 'Salida de efectivo');
       if (!n) return;
-      const reason = await promptBox('Concepto', { placeholder: act === 'in' ? 'Ej. cambio extra' : 'Ej. pago a proveedor, gas' });
+      const reason = await promptBox('Concepto', { placeholder: act === 'in' ? 'Ej. cambio extra' : 'Ej. pago a proveedor, reparto de propinas' });
       if (reason === null) return;
-      await save([['cash_moves', { id: uid(), cash_session_id: s.id, branch_id: branchId(), kind: act, amount: n, reason, user_id: S.user?.id, created_at: Date.now() }]]);
+      const rows = [['cash_moves', { id: uid(), cash_session_id: s.id, branch_id: branchId(), kind: act, amount: n, reason, user_id: S.user?.id, created_at: Date.now() }]];
+      if (act === 'out') rows.push(auditRow('cash_out', { ref: s.id, amount: n, detail: reason }));
+      await save(rows);
     } else if (act === 'close' && s) {
       closeFlow(s);
     }

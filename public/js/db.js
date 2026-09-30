@@ -1,7 +1,7 @@
 // IndexedDB: copia local completa del negocio para trabajar sin internet.
 import { TABLE_NAMES } from './shared/schema.js';
 
-const VERSION = 1;
+const VERSION = 2;
 let idb = null;
 
 export function open(name = 'kpos') {

@@ -53,19 +53,26 @@ export async function createOrder({ table_id = null, customer = '', kind = null 
   return o;
 }
 
-export async function addItem(order, p, q = 1, { note = '' } = {}) {
-  const same = liveItems(order.id).find((i) => i.product_id === p.id && i.status === 'new' && !i.note && !note);
+// Extras / variantes elegidos: [{ g: 'Salsa', name: 'BBQ', price: 0, product_id?, qty? }]
+export const modsTotal = (mods) => round2((mods || []).reduce((t, m) => t + (Number(m.price) || 0), 0));
+const modsKey = (mods) => (mods || []).map((m) => `${m.g}:${m.name}`).sort().join('|');
+export const modsText = (mods) => (mods || []).map((m) => m.name).join(', ');
+
+export async function addItem(order, p, q = 1, { note = '', mods = [] } = {}) {
+  const key = modsKey(mods);
+  const same = liveItems(order.id).find((i) => i.product_id === p.id && i.status === 'new' && !i.note && !note && modsKey(i.mods) === key);
+  const extra = modsTotal(mods);
   let item;
   if (same) {
     const nq = round3(Number(same.qty) + q);
-    const price = priceFor(p, nq);
+    const price = round2(priceFor(p, nq) + extra);
     item = { ...same, qty: nq, price, total: round2(nq * price) };
   } else {
-    const price = priceFor(p, q);
+    const price = round2(priceFor(p, q) + extra);
     item = {
       id: uid(), order_id: order.id, branch_id: order.branch_id, product_id: p.id, name: p.name, qty: q,
       unit: p.unit || 'pza', price, total: round2(q * price), note, station: p.station || '', status: 'new',
-      sent_at: null, ready_at: null, user_id: S.user?.id, cancel_reason: null,
+      sent_at: null, ready_at: null, user_id: S.user?.id, cancel_reason: null, mods: mods.length ? mods : null,
     };
   }
   await save(withOrder(order, [item]));
@@ -76,7 +83,7 @@ export async function setItemQty(order, item, q) {
   if (item.status !== 'new') return;
   const p = get('products', item.product_id);
   if (q <= 0) return save(withOrder(order, [{ ...item, deleted: 1 }]));
-  const price = p ? priceFor(p, q) : item.price;
+  const price = p ? round2(priceFor(p, q) + modsTotal(item.mods)) : item.price;
   return save(withOrder(order, [{ ...item, qty: round3(q), price, total: round2(q * price) }]));
 }
 
@@ -100,6 +107,11 @@ function stockMoves(item, sign, suffix = '') {
       if (cp?.track_stock && c.qty > 0) out.push(mk(cp.id, Number(c.qty) * Number(item.qty), `sm-${item.id}-${cp.id}${suffix}`));
     }
   }
+  // Variantes que consumen inventario (ej. cubeta de Corona = 6 Corona).
+  (item.mods || []).forEach((m, k) => {
+    const mp = m.product_id && get('products', m.product_id);
+    if (mp?.track_stock && Number(m.qty) > 0) out.push(mk(mp.id, Number(m.qty) * Number(item.qty), `sm-${item.id}-m${k}${suffix}`));
+  });
   return out;
 }
 
@@ -135,7 +147,7 @@ export async function payOrder(order, payments) {
   for (const p of payments) {
     rows.push(['payments', {
       id: uid(), order_id: order.id, branch_id: order.branch_id, method: p.method, amount: round2(p.amount),
-      received: round2(p.received ?? p.amount), change_given: round2(p.change || 0),
+      received: round2(p.received ?? p.amount), change_given: round2(Math.max(0, p.change || 0)), tip: round2(p.tip || 0),
       cash_session_id: session?.id || null, user_id: S.user?.id, created_at: now,
     }]);
   }
@@ -146,16 +158,16 @@ export async function payOrder(order, payments) {
 }
 
 // Cancela un producto ya enviado. Si returnStock, regresa al inventario lo descontado.
-export async function cancelItem(order, item, { reason = '', returnStock = true } = {}) {
+export async function cancelItem(order, item, { reason = '', returnStock = true, extra = [] } = {}) {
   const rows = [];
   if (item.status !== 'new' && returnStock) {
     for (const m of stockMoves(item, +1, '-r')) rows.push(['stock_moves', m]);
   }
   const updated = item.status === 'new' ? { ...item, deleted: 1 } : { ...item, status: 'cancelled', cancel_reason: reason };
-  await save([...withOrder(order, [updated]), ...rows]);
+  await save([...withOrder(order, [updated]), ...rows, ...extra]);
 }
 
-export async function cancelOrder(order, { reason = '', returnStock = true } = {}) {
+export async function cancelOrder(order, { reason = '', returnStock = true, extra = [] } = {}) {
   const rows = [];
   for (const i of liveItems(order.id)) {
     if (i.status === 'new') { rows.push(['order_items', { ...i, deleted: 1 }]); continue; }
@@ -164,7 +176,7 @@ export async function cancelOrder(order, { reason = '', returnStock = true } = {
       for (const m of stockMoves(i, +1, '-r')) rows.push(['stock_moves', m]);
     }
   }
-  await save([['orders', { ...order, status: 'cancelled', closed_at: Date.now(), note: reason }], ...rows]);
+  await save([['orders', { ...order, status: 'cancelled', closed_at: Date.now(), note: reason }], ...rows, ...extra]);
 }
 
 export async function discardIfEmpty(order) {
@@ -187,4 +199,35 @@ export async function stockMove({ product, qty, kind, note = '', cost = null }) 
     id: uid(), branch_id: branchId(), product_id: product.id, qty: round3(qty), kind, ref_id: null, note,
     user_id: S.user?.id || null, created_at: Date.now(), cost: cost ?? product.cost ?? 0,
   }]]);
+}
+
+// Pasa productos (completos o parte de la cantidad) a otra cuenta. Sirve para dividir la cuenta y unir mesas.
+export async function moveItems(from, moves, to) {
+  const rows = [];
+  const fromChanged = [];
+  const toChanged = [];
+  for (const { item, qty } of moves) {
+    if (!item || qty <= 0) continue;
+    if (qty >= Number(item.qty)) {
+      toChanged.push({ ...item, order_id: to.id });
+      fromChanged.push({ ...item, deleted: 1, _moved: true });
+    } else {
+      const rest = round3(Number(item.qty) - qty);
+      fromChanged.push({ ...item, qty: rest, total: round2(rest * item.price) });
+      // Si ya se había enviado a cocina, la parte separada conserva el id base (~s) para no reimprimirse.
+      const newId = item.status === 'new' ? uid() : `${item.id.split('~')[0]}~s${Date.now().toString(36)}`;
+      toChanged.push({ ...item, id: newId, order_id: to.id, qty, total: round2(qty * item.price) });
+    }
+  }
+  // La fila movida completa conserva su id (y sus movimientos de inventario); solo cambia de cuenta.
+  const fromMap = new Map(liveItems(from.id).map((i) => [i.id, i]));
+  for (const i of fromChanged) { if (i._moved) fromMap.delete(i.id); else fromMap.set(i.id, i); }
+  recalc(from, [...fromMap.values()]);
+  const toMap = new Map(liveItems(to.id).map((i) => [i.id, i]));
+  for (const i of toChanged) toMap.set(i.id, i);
+  recalc(to, [...toMap.values()]);
+  rows.push(['orders', { ...from }], ['orders', { ...to }]);
+  for (const i of fromChanged) if (!i._moved) rows.push(['order_items', i]);
+  for (const i of toChanged) rows.push(['order_items', i]);
+  await save(rows);
 }

@@ -1,5 +1,5 @@
 // Pantalla de bloqueo: cada persona entra con su PIN (funciona sin internet).
-import { S, sorted, tenantId, cfg } from '../store.js';
+import { S, sorted, tenantId, cfg, accounts, activeDb, switchAccount } from '../store.js';
 import { esc, avatar } from '../ui.js';
 import { ROLES } from '../shared/schema.js';
 import { pinHash } from '../shared/util.js';
@@ -17,6 +17,7 @@ export function mount(el, { onLogin }) {
         <h1>${esc(cfg().name || S.meta.tenant?.name || 'K-POS')}</h1><p class="muted">¿Quién eres?</p>
         <div class="user-grid">${us.map((u) => `<button class="user-tile" data-act="user" data-id="${u.id}">${avatar(u, 'xl')}<b>${esc(u.name)}</b><small>${esc(ROLES[u.role]?.label || u.role)}</small></button>`).join('')}</div>
         ${us.length ? '' : '<p class="muted">Descargando usuarios… verifica tu conexión.</p>'}
+        ${accounts().length > 1 ? `<div class="accounts">${accounts().filter((a) => a.db !== activeDb()).map((a) => `<button class="btn ghost" data-act="switch" data-db="${esc(a.db)}">↔ ${esc(a.name)}</button>`).join('')}</div>` : ''}
       </div>`;
       return;
     }
@@ -50,6 +51,7 @@ export function mount(el, { onLogin }) {
     if (!a) return;
     if (a.dataset.act === 'user') { selected = S.data.users.get(a.dataset.id); pin = ''; draw(); }
     if (a.dataset.act === 'key') press(a.dataset.k);
+    if (a.dataset.act === 'switch') switchAccount(a.dataset.db);
   };
   const onKey = (e) => {
     if (!selected) return;

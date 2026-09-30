@@ -149,17 +149,27 @@ Tablas solo de servidor: `tenants`, `devices`, `link_codes`, `telegram_chats`, `
 ## 7. Seguridad
 
 - Contraseña del dueño con PBKDF2-SHA256 (100k iteraciones); tokens de dispositivo guardados como hash.
+- Límite de intentos por IP en registro, login, vinculación y recuperación de contraseña.
+- Cancelaciones, descuentos y salidas de efectivo quedan en la bitácora `audit` con quién autorizó.
 - Cada petición de sincronización está limitada al `tenant_id` del token; las columnas se filtran por lista blanca.
 - El PIN es un bloqueo de conveniencia para cambiar de usuario rápido (4 dígitos), no una credencial fuerte:
   las acciones sensibles (cancelar, descuentos, ajustes) dependen del rol.
 - Webhook de Telegram validado con `X-Telegram-Bot-Api-Secret-Token`.
 
-## 8. Siguientes pasos sugeridos
+## 8. Ya incluido para el piloto (bar/restaurante)
 
-1. **Puente hub ↔ nube**: que el hub local se vincule a la cuenta como un dispositivo más y reenvíe push/pull.
-2. **Tiempo real** con Durable Objects (WebSocket) para comandas instantáneas en vez de consulta cada 4 s.
-3. **Fotos en R2** en lugar de guardarlas en la fila del producto (hoy: JPEG 256 px ≈ 15 KB).
-4. **Impresión térmica** ESC/POS por Bluetooth/USB (hoy: `window.print()` con formato de 58/80 mm).
-5. Pagos divididos, propinas, clientes/crédito (fiado), facturación CFDI, corte por mesero.
-6. Panel de administración para ti (alta de clientes, planes, suspensión por falta de pago).
-7. Límite de intentos en login/vinculación (Rate Limiting de Cloudflare).
+Extras y variantes con inventario, pago mixto y propinas, dividir/mover/unir cuentas, PIN de encargado con
+bitácora, impresión ESC/POS (Bluetooth/USB) y del sistema, tiempo real con Durable Objects, CSV de productos y
+ventas, recuperación de contraseña, límite de intentos, varios negocios por dispositivo, panel `/admin.html` con
+suspensión por falta de pago y publicación con GitHub Actions.
+
+## 9. Siguientes pasos
+
+1. **Puente hub ↔ nube** para comandas sin internet entre dispositivos.
+2. **Promociones**: happy hour por horario, 2x1, precios por día.
+3. **Fotos en R2** en lugar de guardarlas en la fila del producto.
+4. **Facturación CFDI** con un PAC (Facturama, FacturAPI).
+5. **Clientes y crédito (fiado)**, proveedores y órdenes de compra.
+6. **Cobro automático** de tu servicio (Stripe / Mercado Pago) conectado al panel `/admin.html`.
+7. **Menú QR** para que el cliente vea la carta (y después pida) desde su mesa.
+8. Reservaciones y lista de espera; traspasos de inventario entre sucursales.
