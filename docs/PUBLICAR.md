@@ -43,6 +43,9 @@ El flujo `.github/workflows/deploy.yml` corre las pruebas, aplica migraciones y 
 | `CLOUDFLARE_ACCOUNT_ID` | Id de tu cuenta (aparece en el panel de Workers) |
 | `D1_DATABASE_ID` | El id de la base creada arriba |
 
+Si falta alguno de los tres secretos, el flujo ejecuta las pruebas y omite la publicación con un aviso.
+Los cambios en `main` quedan guardados aunque todavía no hayas configurado Cloudflare.
+
 Luego en GitHub → Actions → **Publicar** → *Run workflow*. Cada publicación cambia la versión del service worker,
 así que las tablets toman la actualización solas al reabrir la app.
 

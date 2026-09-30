@@ -29,12 +29,14 @@ export function mount(el, params, { go }) {
   if (!tableId && order) setMeta('current_order', order.id);
 
   el.innerHTML = `<div class="pos">
-    <section class="catalog">
+    <section class="catalog" aria-label="Catálogo de productos">
+      <div class="catalog-heading"><div><h1>Vender</h1><p class="muted">Selecciona productos para crear tu pedido.</p></div><span class="tag gray">Punto de venta</span></div>
       <div class="pos-toolbar">
-        <div class="search"><span>🔎</span><input id="q" type="search" autocomplete="off" placeholder="${mod('barcode') ? 'Buscar o escanear código…' : 'Buscar producto…'}"></div>
+        <div class="search"><span aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg></span><input aria-label="Buscar productos por nombre o código" id="q" type="search" autocomplete="off" placeholder="${mod('barcode') ? 'Buscar o escanear código…' : 'Buscar producto…'}"></div>
         <button class="btn" data-act="accounts">🧾 Cuentas <b id="acc-n"></b></button>
       </div>
-      <div class="cats" id="cats"></div>
+      <div class="cats" id="cats" aria-label="Filtrar por categoría"></div>
+      <p class="catalog-results muted small" id="catalog-results" role="status" aria-live="polite"></p>
       <div class="grid" id="grid"></div>
     </section>
     <aside class="ticket" id="ticket"></aside>
@@ -53,14 +55,15 @@ export function mount(el, params, { go }) {
 
   function drawCats() {
     const cats = sorted('categories', (c) => c.active !== 0 && products().some((p) => p.category_id === c.id));
-    $('#cats').innerHTML = [`<button class="chip ${cat === 'all' ? 'on' : ''}" data-act="cat" data-id="all">Todo</button>`,
-      ...cats.map((c) => `<button class="chip ${cat === c.id ? 'on' : ''}" data-act="cat" data-id="${c.id}" style="--c:${esc(c.color || '#64748b')}">${esc(c.emoji || '')} ${esc(c.name)}</button>`)].join('');
+    $('#cats').innerHTML = [`<button class="chip ${cat === 'all' ? 'on' : ''}" aria-pressed="${cat === 'all'}" data-act="cat" data-id="all">Todo</button>`,
+      ...cats.map((c) => `<button class="chip ${cat === c.id ? 'on' : ''}" aria-pressed="${cat === c.id}" data-act="cat" data-id="${c.id}" style="--c:${esc(c.color || '#64748b')}">${esc(c.emoji || '')} ${esc(c.name)}</button>`)].join('');
   }
 
   function drawGrid() {
     const s = search.toLowerCase();
     const inCart = cartQty();
     const items = products().filter((p) => (cat === 'all' || p.category_id === cat) && (!s || p.name.toLowerCase().includes(s) || (p.barcode && p.barcode.includes(s))));
+    $('#catalog-results').textContent = `${items.length} ${items.length === 1 ? 'producto en el catálogo' : 'productos en el catálogo'}`;
     $('#grid').innerHTML = items.map((p) => {
       const av = available(p);
       const n = inCart.get(p.id) || 0;
@@ -73,7 +76,9 @@ export function mount(el, params, { go }) {
         <span class="price">${money(p.price)}${unitLbl}</span>
         ${n ? `<span class="count">${qty(n)}</span><span class="minus" data-act="minus" data-id="${p.id}" role="button" aria-label="Quitar uno">−</span>` : ''}
       </button>`;
-    }).join('') || '<p class="empty">No hay productos. Agrégalos en Ajustes → Productos.</p>';
+    }).join('') || (search || cat !== 'all'
+      ? '<div class="empty catalog-empty"><h2>Sin resultados</h2><p>Prueba otro nombre, código o categoría.</p><button class="btn primary" data-act="reset-search">Ver todos los productos</button></div>'
+      : '<div class="empty catalog-empty"><h2>Tu catálogo está vacío</h2><p>Agrega tus primeros productos en Ajustes → Productos.</p></div>');
   }
 
   function drawTicket() {
@@ -535,7 +540,8 @@ export function mount(el, params, { go }) {
     if (!a) return;
     const act = a.dataset.act;
     e.stopPropagation();
-    if (act === 'cat') { cat = a.dataset.id; drawCats(); drawGrid(); }
+    if (act === 'reset-search') { cat = 'all'; search = ''; q.value = ''; drawCats(); drawGrid(); q.focus(); }
+    else if (act === 'cat') { cat = a.dataset.id; drawCats(); drawGrid(); }
     else if (act === 'minus') {
       const it = order && liveItems(order.id).filter((i) => i.product_id === a.dataset.id && i.status === 'new').pop();
       if (it) { await setItemQty(order, it, Number(it.qty) - (it.unit === 'pza' || !mod('weight') ? 1 : Number(it.qty))); refreshOrder(); }
