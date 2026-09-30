@@ -1,5 +1,6 @@
 // Giros de negocio: cada uno activa módulos y trae un catálogo de ejemplo editable.
 import { uid, pinHash } from './util.js';
+import { ROCKALITAS, menuId } from './rockalitas.js';
 
 export const MODULES = {
   tables: { label: 'Mesas', help: 'Cuentas por mesa, mapa de mesas' },
@@ -15,6 +16,7 @@ export const MODULES = {
 const p = (key, name, emoji, price, cat, o = {}) => ({ key, name, emoji, price, cat, ...o });
 
 export const PRESETS = {
+  rockalitas: ROCKALITAS,
   taqueria: {
     label: 'Taquería', emoji: '🌮',
     modules: { tables: false, kitchen: true, waiters: true, recipes: true },
@@ -210,11 +212,11 @@ export function buildSeed({ type, tenantId, businessName, ownerName, pin, timezo
 
   const cats = {};
   preset.categories.forEach(([key, name, emoji, color], i) => {
-    cats[key] = uid();
+    cats[key] = type === 'rockalitas' ? menuId(`cat-${key}`) : uid();
     add('categories', { id: cats[key], name, emoji, color, sort: i, active: 1 });
   });
   const ids = {};
-  preset.products.forEach((x) => { ids[x.key] = uid(); });
+  preset.products.forEach((x) => { ids[x.key] = type === 'rockalitas' ? menuId(x.key) : uid(); });
   preset.products.forEach((x, i) => {
     add('products', {
       id: ids[x.key], category_id: cats[x.cat] || null, name: x.name, price: x.price,

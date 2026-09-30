@@ -1,11 +1,11 @@
 // Service worker: guarda la app en el dispositivo para abrirla sin internet.
 // Cambia VERSION en cada despliegue para que los dispositivos tomen la nueva versión.
-const VERSION = 'kpos-v3';
+const VERSION = 'kpos-v4';
 const SHELL = [
   '/', '/index.html', '/manifest.webmanifest', '/css/app.css', '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png',
   '/js/app.js', '/js/db.js', '/js/store.js', '/js/sync.js', '/js/ui.js', '/js/orders.js',
   '/js/auth.js', '/js/modifiers.js', '/js/printer.js', '/js/shared/csv.js',
-  '/js/shared/schema.js', '/js/shared/util.js', '/js/shared/presets.js', '/js/shared/report.js',
+  '/js/shared/rockalitas.js', '/js/shared/schema.js', '/js/shared/util.js', '/js/shared/presets.js', '/js/shared/report.js',
   '/js/views/setup.js', '/js/views/login.js', '/js/views/pos.js', '/js/views/tables.js', '/js/views/kitchen.js',
   '/js/views/inventory.js', '/js/views/cash.js', '/js/views/reports.js', '/js/views/settings.js',
 ];

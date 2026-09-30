@@ -3,6 +3,7 @@ import { S, on, get, list, sorted, save, cfg, setMeta, tenantId, branchId, stock
 import { api, syncNow } from '../sync.js';
 import { esc, money, visual, avatar, toast, openModal, confirmBox, promptBox, imageToDataUrl, qty } from '../ui.js';
 import { MODULES, PRESETS } from '../shared/presets.js';
+import { ROCKALITAS, ROCKALITAS_PENDING, buildRockMenu, findMenuProduct } from '../shared/rockalitas.js';
 import { modifiersEditor } from '../modifiers.js';
 import { toCSV, parseCSV, download, productFromRow, PRODUCT_COLUMNS } from '../shared/csv.js';
 import { printerCfg, savePrinterCfg, connect as connectPrinter, printTest, support as printSupport } from '../printer.js';
@@ -10,7 +11,7 @@ import { ROLES } from '../shared/schema.js';
 import { uid, pinHash, round3 } from '../shared/util.js';
 
 const SECTIONS = [
-  ['business', '🏪 Negocio'], ['products', '🏷️ Productos'], ['categories', '🗂️ Categorías'], ['users', '👥 Usuarios'],
+  ['business', '🏪 Negocio'], ['products', '🏷️ Productos'], ['rockmenu', 'Menú Rock Alitas'], ['categories', '🗂️ Categorías'], ['users', '👥 Usuarios'],
   ['tables', '🍽️ Mesas'], ['branches', '🏬 Sucursales'], ['device', '📱 Dispositivos'], ['telegram', '📨 Telegram'],
 ];
 const COLORS = ['#2563eb', '#16a34a', '#dc2626', '#f59e0b', '#8b5cf6', '#0ea5e9', '#ec4899', '#64748b'];
@@ -31,7 +32,7 @@ export function mount(el, params) {
 
   function drawSection() {
     const sb = el.querySelector('#sb');
-    const fn = { business, products, categories, users, tables, branches, device, telegram }[section];
+    const fn = { business, products, rockmenu, categories, users, tables, branches, device, telegram }[section];
     sb.innerHTML = fn();
     if (section === 'telegram') loadTelegram();
     if (section === 'device') loadDevices();
@@ -68,6 +69,38 @@ export function mount(el, params) {
       <div class="inv-list">${prods.map((p) => `<button class="inv-row clickable ${p.active === 0 ? 'inactive' : ''}" data-act="edit-product" data-id="${p.id}">
         ${visual(p, 'sm')}<div class="ir-info"><b>${esc(p.name)}</b><small>${esc(get('categories', p.category_id)?.name || 'Sin categoría')}${p.sellable === 0 ? ' · insumo' : ''}${p.station ? ` · ${esc(p.station)}` : ''}${p.track_stock ? ` · stock ${qty(stockOf(p.id), p.unit)}` : ''}${(p.recipe || []).length ? ' · receta' : ''}${(p.modifiers || []).length ? ' · extras' : ''}</small></div>
         <div class="ir-qty"><b>${p.sellable === 0 ? '—' : money(p.price)}</b></div></button>`).join('')}</div>`;
+  }
+
+  function rockmenu() {
+    const all = [...S.data.products.values()];
+    const missing = ROCKALITAS.products.filter(p => !findMenuProduct(p, all));
+    const count = ROCKALITAS.products.filter(p => { const saved = findMenuProduct(p, all); return saved && !saved.deleted && saved.active !== 0 && saved.sellable !== 0; }).length;
+    return `<div class="view-head"><div><h2>Menú Rock Alitas</h2><p class="muted">${esc(cfg().name)} · Precios en MXN</p></div><button class="btn primary" data-act="load-rockmenu" ${missing.length ? '' : 'disabled'}>${missing.length ? `Cargar ${missing.length} productos faltantes` : 'Menú cargado'}</button></div>
+      <div class="menu-summary"><div class="panel"><b>${ROCKALITAS.products.length}</b><span>Productos de las fotos</span></div><div class="panel"><b>${count}</b><span>Activos para vender</span></div><div class="panel"><b>${ROCKALITAS.categories.length}</b><span>Categorías</span></div></div>
+      <p class="warn-box">Revisa los precios antes de operar. Los costos, existencias, marcas de cerveza y recetas aún requieren captura. La carga conserva tus productos y precios existentes; los productos eliminados no se vuelven a cargar.</p>
+      <details class="panel"><summary>Pendientes de las fotografías</summary><ul>${ROCKALITAS_PENDING.map(n => `<li>${esc(n)}</li>`).join('')}</ul></details>
+      ${ROCKALITAS.categories.map(([key,name]) => `<section class="menu-category"><h3>${esc(name)}</h3><div class="inv-list">${ROCKALITAS.products.filter(p => p.cat === key).map(item => {
+        const saved = findMenuProduct(item, all);
+        const current = saved && !saved.deleted ? saved : null;
+        const status = saved?.deleted ? 'Eliminado' : !current ? 'Por cargar' : current.active === 0 || current.sellable === 0 ? 'Fuera de venta' : 'Activo';
+        return `<${current ? 'button' : 'div'} class="inv-row ${current ? 'clickable' : ''}" ${current ? `data-act="edit-product" data-id="${esc(current.id)}"` : ''}>
+          <div class="ir-info"><b>${esc(current?.name || item.name)}</b><small>${esc(item.detail)}</small><small>${esc(current?.station || item.station)} · ${status}${item.mods.length ? ' · Opciones al vender' : ''}</small></div>
+          <div class="ir-qty"><b>${money(current?.price ?? item.price)}</b>${current && current.price !== item.price ? `<small>Menú: ${money(item.price)}</small>` : ''}</div></${current ? 'button' : 'div'}>`;
+      }).join('')}</div></section>`).join('')}`;
+  }
+
+  let loadingRockMenu = false;
+  async function loadRockMenu() {
+    if (loadingRockMenu) return;
+    loadingRockMenu = true;
+    try {
+      if (!(await confirmBox(`¿Agregar el menú Rock Alitas al negocio “${cfg().name}”? Los productos existentes se conservan.`, { ok: 'Cargar menú' }))) return;
+      const rows = buildRockMenu([...S.data.products.values()], [...S.data.categories.values()]);
+      if (!rows.length) return;
+      await save(rows);
+      toast('Menú Rock Alitas cargado. Puedes editar cada producto.');
+      drawSection();
+    } finally { loadingRockMenu = false; }
   }
 
   function productForm(p) {
@@ -411,6 +444,7 @@ export function mount(el, params) {
     const id = a.dataset.id;
     if (act === 'section') { section = a.dataset.s; search = ''; draw(); return; }
     if (act === 'new-product') productForm();
+    else if (act === 'load-rockmenu') await loadRockMenu();
     else if (act === 'export-products') exportProducts();
     else if (act === 'edit-product') productForm(get('products', id));
     else if (act === 'new-cat') catForm();
@@ -526,7 +560,7 @@ export function mount(el, params) {
   el.addEventListener('input', onInput);
   el.addEventListener('change', onChange);
   const off = on((c) => {
-    const relevant = { products: ['products', 'categories', 'stock_moves'], categories: ['categories', 'products'], users: ['users'], tables: ['tables'], branches: ['branches'] }[section];
+    const relevant = { rockmenu: ['products', 'categories'], products: ['products', 'categories', 'stock_moves'], categories: ['categories', 'products'], users: ['users'], tables: ['tables'], branches: ['branches'] }[section];
     if (relevant && relevant.some((t) => c.has(t))) drawSection();
   });
   draw();

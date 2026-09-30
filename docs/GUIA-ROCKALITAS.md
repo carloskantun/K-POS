@@ -19,10 +19,10 @@ retoman solas al volver la conexión. Si el bar quiere comandas sin internet, se
 
 ## Paso a paso
 
-1. **Crear el negocio** en la tablet de caja: *Crear mi negocio → Bar / Restaurante-bar*, con cuenta en la nube
-   (cuenta: `rockalitas`, correo y contraseña del dueño). Queda precargado un menú de ejemplo con cervezas,
+1. **Crear el negocio** en la tablet de caja: *Crear mi negocio → Rock Alitas · Menú real*, con cuenta en la nube
+   (cuenta: `rockalitas`, correo y contraseña del dueño). Para el menú fotografiado elige **Rock Alitas · Menú real**: trae 48 productos y sus precios (consulta `docs/ROCKALITAS-MENU.md`). El giro genérico Bar / Restaurante-bar conserva un menú de ejemplo con cervezas,
    cubetas por marca, micheladas, cocteles, alitas con salsas, hamburguesa con término y cover.
-2. **Menú real**: *Ajustes → Productos*. Opciones:
+2. **Menú real**: *Ajustes → Menú Rock Alitas* permite revisar la transcripción y cargar los productos faltantes en un negocio existente. Toca un producto cargado para editarlo. En *Ajustes → Productos* también puedes:
    - Editar uno por uno (foto con la cámara, precio, extras).
    - O llenar el menú en Excel, guardarlo como CSV y usar **⬆ Importar**. Primero descarga **⬇ CSV** para ver
      el formato (columnas: nombre, categoria, precio, costo, unidad, codigo_barras, emoji, estacion, inventario,
