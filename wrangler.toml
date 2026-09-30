@@ -1,0 +1,35 @@
+name = "k-pos"
+main = "worker/src/index.js"
+compatibility_date = "2025-09-01"
+
+# La PWA (carpeta public/) se sirve como archivos estáticos; /api/* lo atiende el Worker.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "k-pos"
+database_id = "REEMPLAZAR_CON_ID_DE_D1"
+migrations_dir = "worker/migrations"
+
+# Cada hora: el Worker revisa qué negocios están en su hora de resumen (según su zona horaria).
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+# Dominio raíz: cada negocio usa un subdominio, ej. taqueria-lupita.kpos.mx
+ROOT_DOMAIN = "kpos.mx"
+TELEGRAM_BOT_USERNAME = ""
+
+# Secretos (wrangler secret put ...):
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, ADMIN_KEY
+#
+# Subdominios: en el dashboard de Cloudflare agrega un registro DNS comodín (*.kpos.mx)
+# y una ruta del Worker, o descomenta:
+# routes = [
+#   { pattern = "kpos.mx/*", zone_name = "kpos.mx" },
+#   { pattern = "*.kpos.mx/*", zone_name = "kpos.mx" },
+# ]
