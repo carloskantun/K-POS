@@ -1,7 +1,7 @@
 import { S, init, on, can, mod, cfg, login, get } from './store.js';
 import { startSync, syncNow } from './sync.js';
 import { startKitchenPrinting } from './printer.js';
-import { esc, avatar, toast } from './ui.js';
+import { esc, avatar, toast, openModal } from './ui.js';
 import * as setup from './views/setup.js';
 import * as lock from './views/login.js';
 import * as pos from './views/pos.js';
@@ -65,7 +65,7 @@ function renderHeader() {
     <div class="brand"><span class="logo">K</span><div><b>${esc(cfg().name || S.meta.tenant?.name || 'K-POS')}</b>${branch && branchCount() > 1 ? `<small>${esc(branch.name)}</small>` : ''}</div></div>
     <div class="top-actions">
       <button class="pill-btn" data-act="sync">${statusPill()}</button>
-      <button class="user-btn" data-act="lock" title="Cambiar de usuario">${avatar(S.user)}<span>${esc(S.user?.name || '')}</span></button>
+      <button class="user-btn" data-act="lock" title="Usuario y salida" aria-label="Abrir menú de usuario">${avatar(S.user)}<span>${esc(S.user?.name || '')}</span></button>
     </div>`;
 }
 
@@ -124,8 +124,15 @@ app.addEventListener('click', async (e) => {
   const a = e.target.closest('#topbar [data-act]');
   if (!a) return;
   if (a.dataset.act === 'lock') {
-    await login(null);
-    render();
+    const m = openModal({
+      title: S.user?.name || 'Usuario', size: 'small',
+      html: `<p class="muted">Salir bloquea este dispositivo y conserva las cuentas y ventas. Los otros dispositivos continúan trabajando.</p><p class="muted">${S.meta.demo ? 'Modo local: este negocio aún no sincroniza con otros dispositivos.' : 'Puedes consultar y revocar dispositivos en Ajustes → Dispositivos.'}</p><div class="menu-list">${can('settings') ? '<button data-act="devices">Ver dispositivos y conexión</button>' : ''}<button data-act="exit-user">Cambiar de usuario</button><button data-act="exit-user">Cerrar sesión en este dispositivo</button>${S.user?.role === 'owner' ? '<button data-act="platform-admin">Panel de superadministrador</button>' : ''}</div>`,
+      onClick: async (act) => {
+        if (act === 'exit-user') { m.close(); await login(null); render(); }
+        else if (act === 'devices') { m.close(); go('settings', { s: 'device' }); }
+        else if (act === 'platform-admin') { m.close(); await login(null); location.href = '/admin.html'; }
+      },
+    });
   } else if (a.dataset.act === 'sync') {
     if (S.meta.demo) toast('Modo local: conecta el negocio a la nube en Ajustes → Nube para usar varios dispositivos.', 'info', 4000);
     else { syncNow(); toast('Sincronizando…', 'info'); }

@@ -103,7 +103,7 @@ export function mount(el, params, { go }) {
         <div class="t-total"><span>Total</span><b>${money(total)}</b></div>
         <div class="t-actions">
           ${showSend ? `<button class="btn send big" data-act="send">${kitchenNew ? `👨‍🍳 Enviar comanda (${kitchenNew})` : '💾 Guardar cuenta'}</button>` : ''}
-          ${can('charge') ? `<button class="btn pay big" data-act="pay" ${!order || !liveItems(order.id).length ? 'disabled' : ''}>💵 Cobrar ${money(total)}</button>` : ''}
+          ${can('charge') ? `<button class="btn pay big" data-act="pay" ${!order || !liveItems(order.id).length ? 'disabled' : ''}>💵 Cobrar ${money(total)}</button><small class="muted pay-hint">En el siguiente paso puedes añadir propina antes de confirmar.</small>` : ''}
         </div>
       </footer>`;
 
@@ -317,7 +317,7 @@ export function mount(el, params, { go }) {
           <button class="btn small" data-act="half">½</button>
           <button class="btn small" data-act="all">Todo</button>
         </div>
-        <div class="np-quick tips"><span class="muted">Propina:</span>${[0, 10, 15, 20].map((pc) => `<button class="btn small ${tip === round2((a * pc) / 100) ? 'on' : ''}" data-act="tip" data-p="${pc}">${pc ? `${pc}%` : 'Sin'}</button>`).join('')}<button class="btn small" data-act="tip-other">${tip && ![10, 15, 20].some((pc) => tip === round2((a * pc) / 100)) ? money(tip) : 'Otra'}</button></div>
+        <div class="np-quick tips"><span class="muted">Propina opcional:</span>${[0, 10, 15, 20].map((pc) => `<button class="btn small ${tip === round2((a * pc) / 100) ? 'on' : ''}" data-act="tip" data-p="${pc}">${pc ? `${pc}%` : 'Sin'}</button>`).join('')}<button class="btn small" data-act="tip-other">${tip && ![10, 15, 20].some((pc) => tip === round2((a * pc) / 100)) ? money(tip) : 'Otra'}</button></div>
         ${method === 'efectivo' ? `<div class="np-quick">${quick()}</div>` : ''}
         <div class="np-keys compact">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'].map((k) => `<button class="np-key" data-act="k" data-k="${k}">${k}</button>`).join('')}</div>
         ${method === 'efectivo' && !session ? '<p class="warn-box">⚠️ No hay caja abierta: el efectivo no quedará en un corte. Abre la caja en “Caja”.</p>' : ''}

@@ -520,3 +520,7 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 3px sol
 .menu-category .ir-qty { flex: none; }
 .menu-category .ir-qty small { display: block; color: var(--muted); font-size: .75rem; }
 @media (max-width: 480px) { .menu-summary { gap: .4rem; } .menu-summary .panel { padding: .7rem; } }
+
+.mod-opts { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
+.mod-opt { min-width: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; padding: .65rem; }
+.pay-hint { display: block; text-align: center; line-height: 1.4; }

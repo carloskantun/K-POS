@@ -48,7 +48,7 @@ export function mount(el) {
               <button class="btn small red" data-act="waste" data-id="${p.id}" title="Merma / pérdida">− Merma</button>
               <button class="btn small" data-act="adjust" data-id="${p.id}" title="Contar y ajustar">✎</button>
             </div></div>`;
-        }).join('') || '<p class="empty">No hay productos con control de inventario. Actívalo en Ajustes → Productos.</p>'}</div>`;
+        }).join('') || '<p class="empty">No hay productos con control de inventario. En Ajustes → Productos, abre cada producto y activa “Controlar inventario”. Después captura las existencias en Conteo rápido. Para alitas o paquetes, registra primero sus insumos y recetas.</p><div class="actions left"><a class="btn primary" href="#/settings?s=products">Configurar productos</a></div>'}</div>`;
       const q = body.querySelector('#q');
       q.oninput = () => { search = q.value; drawBody(); const n = el.querySelector('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
     } else if (tab === 'count') {
