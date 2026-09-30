@@ -35,7 +35,10 @@ Además:
 - **Tiempo real**: las comandas llegan al instante (Durable Objects); si no hay conexión en vivo, consulta cada 4 s.
 - **Excel**: importar y exportar productos en CSV; exportar ventas por rango de fechas.
 - **Varios negocios en un mismo celular** (dueño con dos marcas) y recuperación de contraseña por correo.
-- **Panel para ti** (`/admin.html`): clientes, plan, fecha de pago, suspender/reactivar, códigos de soporte.
+- **Panel para ti** (`/admin.html`): crear clientes por giro, elegir catálogo inicial, buscar y filtrar pruebas/clientes oficiales, plan, fecha de pago, suspender/reactivar y códigos de soporte. Incluye regreso al POS.
+- **Imágenes de referencia**: ilustraciones por tipo de producto; las fotografías reales cargadas desde Ajustes tienen prioridad.
+
+Guía del alta y revisión de interfaz: [docs/UX-MULTINEGOCIO.md](docs/UX-MULTINEGOCIO.md).
 
 Roles: **Dueño**, **Encargado**, **Cajero**, **Mesero**, **Cocina/Barra**. Una taquería con una sola tablet
 funciona igual que un restaurante con 5 meseros y 2 pantallas de cocina: solo cambia qué módulos están activos.

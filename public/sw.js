@@ -1,7 +1,10 @@
 // Service worker: guarda la app en el dispositivo para abrirla sin internet.
 // Cambia VERSION en cada despliegue para que los dispositivos tomen la nueva versión.
-const VERSION = 'kpos-v5';
+const VERSION = 'kpos-v6';
 const SHELL = [
+  '/icons/products/shrimp.svg', '/icons/products/burrito.svg', '/icons/products/rings.svg', '/icons/products/hotdog.svg',
+  '/icons/products/wings.svg', '/icons/products/fries.svg', '/icons/products/beer.svg', '/icons/products/cocktail.svg',
+  '/icons/products/soda.svg', '/icons/products/taco.svg', '/icons/products/plate.svg', '/icons/products/sauce.svg',
   '/', '/index.html', '/manifest.webmanifest', '/css/app.css', '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png',
   '/js/app.js', '/js/db.js', '/js/store.js', '/js/sync.js', '/js/ui.js', '/js/orders.js',
   '/js/auth.js', '/js/modifiers.js', '/js/printer.js', '/js/shared/csv.js',

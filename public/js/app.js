@@ -1,7 +1,7 @@
 import { S, init, on, can, mod, cfg, login, get } from './store.js';
 import { startSync, syncNow } from './sync.js';
 import { startKitchenPrinting } from './printer.js';
-import { esc, avatar, toast, openModal } from './ui.js';
+import { esc, avatar, toast, openModal, icon } from './ui.js';
 import * as setup from './views/setup.js';
 import * as lock from './views/login.js';
 import * as pos from './views/pos.js';
@@ -75,8 +75,17 @@ function renderNav(active) {
   const nav = document.getElementById('nav');
   if (!nav) return;
   const items = visibleNav();
-  nav.innerHTML = items.map((n) => `<a href="#/${n.id}" class="${n.id === active ? 'active' : ''}"><span class="ni">${n.icon}</span><span class="nl">${n.label}</span>${n.id === 'kitchen' ? '<i class="badge" id="kds-badge"></i>' : ''}${n.id === 'tables' || (n.id === 'pos' && !mod('tables')) ? '<i class="badge green" id="ready-badge"></i>' : ''}</a>`).join('');
-  nav.classList.toggle('single', items.length <= 1);
+  const primary = items.length <= 5 ? items : items.filter(n => ['pos','tables','kitchen','cash'].includes(n.id));
+  for (const n of items) if (primary.length < 4 && !primary.includes(n)) primary.push(n);
+  const secondary = items.filter(n => !primary.includes(n));
+  nav.innerHTML = items.map((n) => `<a href="#/${n.id}" class="${n.id === active ? 'active' : ''} ${secondary.includes(n) ? 'nav-secondary' : ''}"><span class="ni">${icon(n.id)}</span><span class="nl">${n.label}</span>${n.id === 'kitchen' ? '<i class="badge" id="kds-badge"></i>' : ''}${n.id === 'tables' || (n.id === 'pos' && !mod('tables')) ? '<i class="badge green" id="ready-badge"></i>' : ''}</a>`).join('');
+  if (secondary.length) {
+    nav.insertAdjacentHTML('beforeend', `<button class="nav-more ${secondary.some(n => n.id === active) ? 'active' : ''}" aria-label="Más opciones de navegación">${icon('more')}<span>Más</span></button>`);
+    nav.querySelector('.nav-more').onclick = () => {
+      const m = openModal({ title: 'Más opciones', size: 'small', html: `<div class="menu-list">${secondary.map(n => `<button data-act="route" data-route="${n.id}">${esc(n.label)}</button>`).join('')}</div>`, onClick: (act,a) => { if (act === 'route') { m.close(); go(a.dataset.route); } } });
+    };
+  }
+  nav.classList.toggle('single' , items.length <= 1);
   updateBadges();
 }
 

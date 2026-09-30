@@ -5,7 +5,7 @@ Transcripción de IMG_0447.HEIC, IMG_0448.HEIC e IMG_0449.HEIC, recibidas el 30 
 ## Cargar y administrar
 
 - Negocio nuevo: Crear mi negocio → Rock Alitas · Menú real.
-- Negocio existente: Ajustes → Menú Rock Alitas → Cargar productos faltantes. Confirma el nombre del negocio antes de cargar.
+- Negocio existente: si aún no usa la plantilla, elegir el giro Rock Alitas · Menú real en Ajustes → Negocio y guardar. Luego Ajustes → Menú Rock Alitas → Cargar productos faltantes. Confirma el nombre del negocio antes de cargar.
 - Si el negocio existente no usa comandas o mesas, activa esas funciones en Ajustes → Negocio antes de operar el restaurante.
 - En el panel, toca un producto cargado para cambiar precio, foto, categoría, estación, estado, extras o receta.
 - Las órdenes, paquetes y productos aparecen en Vender. Las opciones elegidas se incluyen en comandas y tickets.

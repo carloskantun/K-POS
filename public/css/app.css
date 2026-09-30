@@ -3,7 +3,7 @@
   --bg: #f1f5f9;
   --panel: #ffffff;
   --ink: #0f172a;
-  --muted: #64748b;
+  --muted: #475569;
   --line: #e2e8f0;
   --brand: #0f172a;
   --primary: #2563eb;
@@ -11,7 +11,7 @@
   --green-bg: #dcfce7;
   --red: #dc2626;
   --red-bg: #fee2e2;
-  --amber: #d97706;
+  --amber: #b45309;
   --amber-bg: #fef3c7;
   --radius: 14px;
   --shadow: 0 1px 2px rgb(15 23 42 / 6%), 0 4px 14px rgb(15 23 42 / 6%);
@@ -50,7 +50,7 @@ h3 { font-size: 1.05rem; margin-top: 1rem; }
 .btn:disabled { opacity: .45; pointer-events: none; }
 .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
 .btn.pay, .btn.green { background: var(--green); border-color: var(--green); color: #fff; }
-.btn.send { background: #ea580c; border-color: #ea580c; color: #fff; }
+.btn.send { background: #c2410c; border-color: #c2410c; color: #fff; }
 .btn.red, .btn.danger { background: var(--red); border-color: var(--red); color: #fff; }
 .btn.danger.ghost { background: transparent; color: var(--red); border-color: var(--red-bg); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--primary); }
@@ -524,3 +524,51 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 3px sol
 .mod-opts { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
 .mod-opt { min-width: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; padding: .65rem; }
 .pay-hint { display: block; text-align: center; line-height: 1.4; }
+
+/* Legibilidad y administración de varios negocios. */
+.row2 > div { min-width: 0; }
+.ir-info b, .l-info b, .t-title b { overflow-wrap: anywhere; }
+.card .name { display: block; min-height: 2.8em; line-height: 1.4; overflow: visible; -webkit-line-clamp: unset; }
+.toasts { top: auto; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 12px); }
+.admin-back { color: var(--primary); text-decoration: none; display: inline-flex; min-height: 44px; align-items: center; }
+.admin-client-form label { display: block; }
+.admin-client-form details { border: 1px solid var(--line); padding: 1rem; border-radius: var(--radius); }
+.admin-client-form summary { cursor: pointer; min-height: 44px; }
+.admin-actions { margin: 0; }
+.wrap select { min-height: 44px; padding: .6rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.wrap .toolbar { margin-bottom: 1rem; }
+#feedback { color: var(--muted); }
+@media (min-width: 900px) { .toasts { left: auto; right: 20px; transform: none; bottom: 20px; } }
+@media (max-width: 600px) {
+  .row2 { grid-template-columns: minmax(0,1fr); }
+  .wrap h1 { font-size: 1.5rem; }
+  .admin-actions { width: 100%; flex-wrap: wrap; justify-content: flex-start; }
+  #list, #list tbody, #list tr, #list td { display: block; width: 100%; }
+  #list thead { display: none; }
+  #list tr { border: 1px solid var(--line); border-radius: 14px; margin-bottom: 1rem; background: var(--panel); padding: .5rem; }
+  #list td { border: 0; padding: .5rem; overflow-wrap: anywhere; }
+  #list td[data-label]::before { content: attr(data-label); display: block; font-size: .75rem; color: var(--muted); margin-bottom: .25rem; }
+  #list .row-actions .btn { min-height: 44px; }
+  .wrap .table-wrap { border: 0; background: transparent; }
+}
+
+.nav-more { display: none; }
+#nav .ni { display: inline-flex; }
+@media (max-width: 899px) {
+  #nav a.nav-secondary { display: none; }
+  #nav .nav-more { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 0; background: var(--panel); color: var(--muted); font-size: .75rem; font-weight: 600; min-height: 44px; }
+  #nav .nav-more.active { color: var(--ink); }
+  #nav a { font-size: .75rem; }
+}
+
+.wrap #kpis { grid-template-columns: repeat(5,minmax(0,1fr)); }
+@media (min-width: 700px) { .wrap #filters { flex-direction: row; } .wrap #filters select { width: 220px; } }
+@media (max-width: 600px) { .wrap #kpis { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+
+.btn.small, .seg button, .row-actions .btn { min-height: 44px; }
+
+.card .name, .user-tile b, .l-mods { overflow-wrap: anywhere; }
+.card .price { margin-top: auto; }
+@media (max-width: 600px) { .wrap #kpis .kpi:last-child { grid-column: 1 / -1; } }
+
+.chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }

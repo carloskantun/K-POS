@@ -20,12 +20,13 @@ const UNITS = { pza: 'Pieza', kg: 'Kilo', g: 'Gramo', lt: 'Litro', ml: 'Mililitr
 const setCfg = (patch) => save([['config', { ...(get('config', 'business') || { id: 'business' }), id: 'business', value: { ...cfg(), ...patch } }]]);
 
 export function mount(el, params) {
-  let section = params.s || 'business';
+  const hasRockMenu = () => cfg().type === 'rockalitas' || cfg().menu_template === 'rockalitas' || [...S.data.products.keys()].some(id => id.startsWith('rockalitas-menu-'));
+  let section = params.s === 'rockmenu' && !hasRockMenu() ? 'products' : params.s || 'business';
   let search = '';
 
   function draw() {
     el.innerHTML = `<div class="settings">
-      <nav class="set-nav">${SECTIONS.map(([k, v]) => `<button class="${section === k ? 'on' : ''}" data-act="section" data-s="${k}">${v}</button>`).join('')}</nav>
+      <nav class="set-nav">${SECTIONS.filter(([k]) => k !== 'rockmenu' || hasRockMenu()).map(([k, v]) => `<button class="${section === k ? 'on' : ''}" data-act="section" data-s="${k}">${v}</button>`).join('')}</nav>
       <div class="set-body" id="sb"></div></div>`;
     drawSection();
   }

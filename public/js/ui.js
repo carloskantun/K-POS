@@ -6,9 +6,43 @@ export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&a
 export const money = (n) => fmtMoney(n, currency());
 export const qty = fmtQty;
 
+const ICON_PATHS = {
+  pos: '<path d="m3 3 2 2 3 12h10l3-10H6"/><circle cx="9" cy="21" r="1"/><circle cx="18" cy="21" r="1"/>',
+  tables: '<rect x="5" y="5" width="14" height="14" rx="3"/><path d="M8 1v3m8-3v3M8 20v3m8-3v3M1 8h3m-3 8h3m16-8h3m-3 8h3"/>',
+  kitchen: '<path d="M7 15H5a4 4 0 0 1 0-8 5 5 0 0 1 10 0 4 4 0 1 1 4 8h-2v6H7zM7 17h10"/>',
+  inventory: '<path d="m12 3 9 5-9 5-9-5zM3 8v9l9 5 9-5V8M12 13v9M7 5l9 5"/>',
+  cash: '<rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3"/><path d="M6 12h.1M18 12h.1"/>',
+  reports: '<path d="M4 3v18h17M8 16v-5m5 5V6m5 10v-8"/>',
+  settings: '<path d="m9 3 1-2h4l1 2 3 2 2 1v4l-2 1v3l2 1v4l-2 1-3 2-1 2h-4l-1-2-3-2-2-1v-4l2-1v-3-1l-2-1V6l2-1z" transform="translate(0 0) scale(.9)"/><circle cx="11" cy="11" r="3"/>',
+  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+};
+export function icon(name) {
+  return `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ICON_PATHS.more}</svg>`;
+}
+
 export function visual(p, cls = '') {
-  if (p?.image) return `<img class="pic ${cls}" src="${esc(p.image)}" alt="" loading="lazy">`;
+  if (p?.image) return `<img class="pic ${cls}" src="${esc(p.image)}" alt="${esc(p.name || 'Producto')}" loading="lazy">`;
+  const art = productArt(p?.name);
+  if (art) return `<img class="pic ${cls}" src="/icons/products/${art}.svg" alt="Ilustración de referencia: ${esc(p?.name || 'Producto')}" loading="lazy">`;
   return `<span class="pic emoji ${cls}">${esc(p?.emoji || '🏷️')}</span>`;
+}
+
+function productArt(name = '') {
+  const n = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/camarock|camarr|camaron/.test(n)) return 'shrimp';
+  if (/gajos de cebolla/.test(n)) return 'rings';
+  if (/burro|burrito/.test(n)) return 'burrito';
+  if (/salchirock|banderilla/.test(n)) return 'hotdog';
+  if (/kids alone/.test(n)) return 'wings';
+  if (/salsa|aderezo|catsup|nopal|cebollin/.test(n)) return 'sauce';
+  if (/alitas|boneless|nuggets|tiras de pollo|bucket/.test(n)) return 'wings';
+  if (/papas|gajos/.test(n)) return 'fries';
+  if (/cerveza|caguama|corona|victoria|indio|cubeta|cheladita|chela|rolling stone|la del barrio/.test(n)) return 'beer';
+  if (/taco|taquito/.test(n)) return 'taco';
+  if (/refresco|cola|agua/.test(n)) return 'soda';
+  if (/monday|tekillers|charro|johnny|rata|vodka|pituf|mojito|margarita|tequila|whisky|mezcal/.test(n)) return 'cocktail';
+  if (/torta|burro|hamburguesa|compartas|salchirock|camarock/.test(n)) return 'plate';
+  return null;
 }
 
 export function initials(name) {
@@ -42,12 +76,15 @@ export function toast(msg, type = 'ok', ms = 2200) {
   setTimeout(() => t.remove(), ms + 400);
 }
 
+let modalNumber = 0;
 // Modal genérico. onClick(act, el, api) recibe los clics en [data-act].
 export function openModal({ title, html, size = '', onClick, onInput, onClose }) {
+  const previousFocus = document.activeElement;
+  const titleId = `modal-title-${++modalNumber}`;
   const back = document.createElement('div');
   back.className = 'modal-back';
-  back.innerHTML = `<div class="modal ${size}" role="dialog" aria-modal="true">
-    <header><h2>${esc(title)}</h2><button class="icon-btn" data-act="close" aria-label="Cerrar">✕</button></header>
+  back.innerHTML = `<div class="modal ${size}" role="dialog" aria-modal="true" aria-labelledby="${titleId}" tabindex="-1">
+    <header><h2 id="${titleId}">${esc(title)}</h2><button class="icon-btn" data-act="close" aria-label="Cerrar">✕</button></header>
     <div class="modal-body"></div></div>`;
   const body = back.querySelector('.modal-body');
   body.innerHTML = html;
@@ -60,6 +97,7 @@ export function openModal({ title, html, size = '', onClick, onInput, onClose })
       if (closed) return;
       closed = true;
       back.remove();
+      if (previousFocus?.isConnected) previousFocus.focus();
       onClose?.(result);
     },
     setHtml(h) { body.innerHTML = h; },
@@ -75,8 +113,15 @@ export function openModal({ title, html, size = '', onClick, onInput, onClose })
   if (onInput) back.addEventListener('input', (e) => onInput(e.target, api));
   back.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') api.close();
+    if (e.key === 'Tab') {
+      const controls = [...back.querySelectorAll('button, a[href], input, select, textarea, [tabindex="0"]')].filter(n => !n.disabled && n.getClientRects().length);
+      const first = controls[0], last = controls.at(-1);
+      if (!first) { e.preventDefault(); back.querySelector('.modal').focus(); }
+      else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
   });
-  setTimeout(() => back.querySelector('[autofocus]')?.focus(), 30);
+  setTimeout(() => (back.querySelector('[autofocus]') || back.querySelector('.modal')).focus(), 30);
   return api;
 }
 

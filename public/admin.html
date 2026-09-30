@@ -20,92 +20,17 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="view-head"><h2>K-POS · Clientes</h2><div class="inline"><button class="btn" id="reload">Actualizar</button><button class="btn ghost" id="logout">Salir</button></div></div>
+    <div class="view-head"><div><a class="admin-back" href="/">← Volver al POS</a><h1>Clientes y negocios</h1><p class="muted">Administra pruebas, clientes oficiales y accesos desde K-POS.</p></div><div class="actions admin-actions">
+      <button class="btn primary" id="create" hidden>＋ Nuevo cliente</button><button class="btn" id="reload" hidden>Actualizar</button><button class="btn ghost" id="logout" hidden>Salir</button></div></div>
     <form id="login" class="panel form" hidden>
-      <label>Clave de administrador (ADMIN_KEY)</label><input type="password" name="key" autofocus>
+      <label for="admin-key">Clave de superadministrador</label><input id="admin-key" type="password" name="key" autocomplete="current-password" required autofocus>
       <div class="actions left"><button class="btn primary">Entrar</button></div>
     </form>
+    <p id="feedback" role="status" aria-live="polite"></p>
+    <div class="toolbar" id="filters" hidden><div class="search"><input id="client-search" aria-label="Buscar clientes" type="search" placeholder="Buscar negocio, cuenta o correo…"></div><select id="client-status" aria-label="Filtrar clientes por estado"><option value="all">Todos los estados</option><option value="trial">Pruebas</option><option value="active">Activos</option><option value="suspended">Suspendidos</option></select></div>
     <div id="kpis" class="kpis"></div>
     <div class="table-wrap"><table class="data" id="list"></table></div>
   </div>
-  <script type="module">
-    const $ = (s) => document.querySelector(s);
-    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const money = (n) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
-    const date = (t) => (t ? new Date(t).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
-    let key = sessionStorage.getItem('kpos.admin') || '';
-    let tenants = [];
-
-    async function call(path, body) {
-      const res = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'x-admin-key': key, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
-      if (res.status === 403) { sessionStorage.removeItem('kpos.admin'); key = ''; show(); throw new Error('Clave incorrecta'); }
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || res.status);
-      return data;
-    }
-
-    function show() {
-      $('#login').hidden = !!key;
-      if (key) load();
-      else { $('#list').innerHTML = ''; $('#kpis').innerHTML = ''; }
-    }
-
-    async function load() {
-      tenants = (await call('/api/admin/tenants')).tenants;
-      const active = tenants.filter((t) => t.status !== 'suspended');
-      const due = tenants.filter((t) => t.paid_until && t.paid_until < Date.now() && t.status !== 'suspended');
-      $('#kpis').innerHTML = `
-        <div class="kpi"><small>Clientes</small><b>${tenants.length}</b></div>
-        <div class="kpi ok"><small>Activos</small><b>${active.length}</b></div>
-        <div class="kpi ${due.length ? 'bad' : ''}"><small>Pago vencido</small><b>${due.length}</b></div>
-        <div class="kpi"><small>Ventas de clientes (7 días)</small><b>${money(tenants.reduce((s, t) => s + t.sales_7d, 0))}</b></div>`;
-      $('#list').innerHTML = `<thead><tr><th>Negocio</th><th>Estado</th><th>Plan / pagado hasta</th><th>Uso (7 días)</th><th>Dispositivos</th><th></th></tr></thead><tbody>
-        ${tenants.map((t) => `<tr>
-          <td><b>${esc(t.name)}</b><small>${esc(t.slug)} · ${esc(t.business_type)} · ${esc(t.owner_email)}</small><small>Alta ${date(t.created_at)}${t.notes ? ` · ${esc(t.notes)}` : ''}</small></td>
-          <td class="st-${esc(t.status)}">${t.status === 'suspended' ? 'Suspendido' : t.status === 'trial' ? 'Prueba' : 'Activo'}</td>
-          <td>${esc(t.plan || '—')}<small class="${t.paid_until && t.paid_until < Date.now() ? 'due' : ''}">${date(t.paid_until)}</small></td>
-          <td>${money(t.sales_7d)}<small>${t.tickets_7d} tickets${t.chats ? ' · Telegram ✔' : ''}</small></td>
-          <td>${t.devices}<small>Última conexión ${t.last_seen ? new Date(t.last_seen).toLocaleString('es-MX') : '—'}</small></td>
-          <td><div class="row-actions">
-            <button class="btn small" data-act="edit" data-id="${t.id}">Editar</button>
-            <button class="btn small" data-act="code" data-id="${t.id}">Código</button>
-            <button class="btn small" data-act="pass" data-id="${t.id}">Contraseña</button>
-            <button class="btn small ${t.status === 'suspended' ? 'green' : 'danger ghost'}" data-act="toggle" data-id="${t.id}">${t.status === 'suspended' ? 'Reactivar' : 'Suspender'}</button>
-          </div></td></tr>`).join('') || '<tr><td class="empty" colspan="6">Aún no hay clientes</td></tr>'}</tbody>`;
-    }
-
-    $('#login').onsubmit = (e) => { e.preventDefault(); key = e.target.key.value.trim(); sessionStorage.setItem('kpos.admin', key); show(); };
-    $('#logout').onclick = () => { sessionStorage.removeItem('kpos.admin'); key = ''; show(); };
-    $('#reload').onclick = () => load();
-    $('#list').onclick = async (e) => {
-      const a = e.target.closest('[data-act]');
-      if (!a) return;
-      const t = tenants.find((x) => x.id === a.dataset.id);
-      try {
-        if (a.dataset.act === 'toggle') {
-          if (!confirm(`${t.status === 'suspended' ? 'Reactivar' : 'Suspender'} ${t.name}?`)) return;
-          await call('/api/admin/tenants/update', { ...t, status: t.status === 'suspended' ? 'active' : 'suspended' });
-        } else if (a.dataset.act === 'edit') {
-          const plan = prompt('Plan (ej. Básico $299/mes)', t.plan || '');
-          if (plan === null) return;
-          const until = prompt('Pagado hasta (AAAA-MM-DD)', t.paid_until ? new Date(t.paid_until).toISOString().slice(0, 10) : '');
-          if (until === null) return;
-          const notes = prompt('Notas', t.notes || '');
-          if (notes === null) return;
-          await call('/api/admin/tenants/update', { ...t, plan, paid_until: until ? Date.parse(`${until}T23:59:59`) : null, notes });
-        } else if (a.dataset.act === 'code') {
-          const r = await call('/api/admin/tenants/link-code', { id: t.id });
-          alert(`Código para conectar un dispositivo a ${t.name}: ${r.code}\nCuenta: ${t.slug}\nVence en 15 minutos.`);
-        } else if (a.dataset.act === 'pass') {
-          const p = prompt(`Nueva contraseña para ${t.owner_email}`);
-          if (!p) return;
-          await call('/api/admin/tenants/reset-password', { id: t.id, password: p });
-          alert('Contraseña actualizada');
-        }
-        load();
-      } catch (err) { alert(err.message); }
-    };
-    show();
-  </script>
+  <script type="module" src="/js/admin.js"></script>
 </body>
 </html>

@@ -201,7 +201,7 @@ export function buildSeed({ type, tenantId, businessName, ownerName, pin, timezo
   add('config', {
     id: 'business',
     value: {
-      name: businessName, type, currency: 'MXN', timezone: timezone || 'America/Mexico_City',
+      name: businessName, type, menu_template: type === 'rockalitas' ? 'rockalitas' : null, currency: 'MXN', timezone: timezone || 'America/Mexico_City',
       modules: { ...DEFAULT_MODULES, ...preset.modules },
       waiters_can_charge: true, allow_negative_stock: true,
       report_hour: 8, progress_hours: [], ticket_footer: '¡Gracias por su compra!',
