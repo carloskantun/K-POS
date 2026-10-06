@@ -21,14 +21,15 @@
 <body>
   <div class="wrap">
     <div class="view-head"><div><a class="admin-back" href="/">← Volver al POS</a><h1>Clientes y negocios</h1><p class="muted">Administra pruebas, clientes oficiales y accesos desde K-POS.</p></div><div class="actions admin-actions">
-      <button class="btn primary" id="create" hidden>＋ Nuevo cliente</button><button class="btn" id="reload" hidden>Actualizar</button><button class="btn ghost" id="logout" hidden>Salir</button></div></div>
+      <button class="btn primary" id="create" hidden>＋ Nuevo cliente</button><button class="btn" id="plans" hidden>Paquetes</button><button class="btn" id="reload" hidden>Actualizar</button><button class="btn ghost" id="logout" hidden>Salir</button></div></div>
     <form id="login" class="panel form" hidden>
       <label for="admin-key">Clave de superadministrador</label><input id="admin-key" type="password" name="key" autocomplete="current-password" required autofocus>
       <div class="actions left"><button class="btn primary">Entrar</button></div>
     </form>
     <p id="feedback" role="status" aria-live="polite"></p>
-    <div class="toolbar" id="filters" hidden><div class="search"><input id="client-search" aria-label="Buscar clientes" type="search" placeholder="Buscar negocio, cuenta o correo…"></div><select id="client-status" aria-label="Filtrar clientes por estado"><option value="all">Todos los estados</option><option value="trial">Pruebas</option><option value="active">Activos</option><option value="suspended">Suspendidos</option></select></div>
+    <div class="toolbar" id="filters" hidden><div class="search"><input id="client-search" aria-label="Buscar clientes" type="search" placeholder="Buscar negocio, cuenta o correo…"></div><select id="client-status" aria-label="Filtrar clientes por estado"><option value="all">Todos los estados</option><option value="trial">Pruebas</option><option value="active">Activos</option><option value="suspended">Suspendidos</option><option value="balance">Con saldo pendiente</option><option value="expired">Servicio vencido</option></select></div>
     <div id="kpis" class="kpis"></div>
+    <p id="commercial-summary" class="muted" hidden></p>
     <div class="table-wrap"><table class="data" id="list"></table></div>
   </div>
   <script type="module" src="/js/admin.js"></script>

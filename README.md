@@ -92,3 +92,5 @@ Ver [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) para el detalle de cómo funcio
 ### Instancia publicada
 
 K-POS está disponible en [k-pos.carloskantun.workers.dev](https://k-pos.carloskantun.workers.dev). El [panel de clientes](https://k-pos.carloskantun.workers.dev/admin.html) requiere una clave privada. Rock Alitas y el laboratorio `pruebas-kpos` ya están en D1. Estado y pasos pendientes en [Publicar](docs/PUBLICAR.md); preparación de cobros en [Mercado Pago](docs/MERCADO-PAGO.md).
+
+El panel del proveedor incluye **Paquetes**, acuerdos individuales con fechas y **Cobranza** de tus servicios, con cargos, pagos parciales y anulaciones que conservan el historial. Estos cobros son independientes de las ventas del negocio. Ver [Planes y cobranza](docs/PLANES-Y-COBRANZA.md).

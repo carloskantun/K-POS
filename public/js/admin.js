@@ -1,12 +1,15 @@
+import { commercial } from './admin-commercial.js';
 import { PRESETS } from './shared/presets.js';
 import { openModal, toast } from './ui.js';
 
     const $ = (s) => document.querySelector(s);
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const money = (n) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
+    const cycleName = {monthly:'Mensual',yearly:'Anual',once:'Pago único',manual:'Manual'};
     const date = (t) => (t ? new Date(t).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
     let key = sessionStorage.getItem('kpos.admin') || '';
     let tenants = [];
+    const controls = commercial({call, reload:load});
 
     async function call(path, body) {
       const res = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'x-admin-key': key, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
@@ -18,7 +21,7 @@ import { openModal, toast } from './ui.js';
 
     function show() {
       $('#login').hidden = !!key;
-      for (const id of ['create','reload','logout','filters']) $(`#${id}`).hidden = !key;
+      for (const id of ['create','plans','reload','logout','filters','commercial-summary']) $(`#${id}`).hidden = !key;
       if (key) load();
       else { $('#list').innerHTML = ''; $('#kpis').innerHTML = ''; }
     }
@@ -39,24 +42,26 @@ import { openModal, toast } from './ui.js';
         <div class="kpi"><small>Clientes</small><b>${tenants.length}</b></div>
         <div class="kpi ok"><small>Clientes activos</small><b>${active.length}</b></div>
         <div class="kpi"><small>Pruebas</small><b>${trials.length}</b></div>
-        <div class="kpi ${due.length ? 'bad' : ''}"><small>Pago vencido</small><b>${due.length}</b></div>
+        <div class="kpi ${due.length ? 'bad' : ''}"><small>Servicio por renovar</small><b>${due.length}</b></div>
         <div class="kpi"><small>Ventas de clientes (7 días)</small><b>${money(tenants.reduce((s, t) => s + t.sales_7d, 0))}</b></div>`;
+      $('#commercial-summary').textContent = `Saldo pendiente de tus servicios K-POS: ${money(tenants.reduce((n,t)=>n+(t.balance_cents||0),0)/100)}. Las ventas mostradas abajo pertenecen a los clientes.`;
       drawList();
     }
 
     function drawList() {
       const q = $('#client-search').value.trim().toLowerCase();
       const status = $('#client-status').value;
-      const visible = tenants.filter(t => (status === 'all' || t.status === status) && `${t.name} ${t.slug} ${t.owner_email}`.toLowerCase().includes(q));
-      $('#list').innerHTML = `<thead><tr><th>Negocio</th><th>Estado</th><th>Plan / pagado hasta</th><th>Uso (7 días)</th><th>Dispositivos</th><th></th></tr></thead><tbody>
+      const visible = tenants.filter(t => (status === 'all' || t.status === status || (status === 'balance' && t.balance_cents > 0) || (status === 'expired' && t.paid_until && t.paid_until < Date.now())) && `${t.name} ${t.slug} ${t.owner_email}`.toLowerCase().includes(q));
+      $('#list').innerHTML = `<thead><tr><th>Negocio</th><th>Estado</th><th>Acuerdo / servicio</th><th>Uso (7 días)</th><th>Dispositivos</th><th></th></tr></thead><tbody>
         ${visible.map((t) => `<tr>
           <td data-label="Negocio"><b>${esc(t.name)}</b><small>${esc(t.slug)} · ${esc(t.business_type)} · ${esc(t.owner_email)}</small><small>Alta ${date(t.created_at)}${t.notes ? ` · ${esc(t.notes)}` : ''}</small></td>
           <td data-label="Estado" class="st-${esc(t.status)}">${t.status === 'suspended' ? 'Suspendido' : t.status === 'trial' ? 'Prueba' : 'Activo'}</td>
-          <td data-label="Plan / pago">${esc(t.plan || '—')}<small class="${t.paid_until && t.paid_until < Date.now() ? 'due' : ''}">${date(t.paid_until)}</small></td>
+          <td data-label="Acuerdo / servicio">${esc(t.plan || 'Sin acuerdo definido')}<small>${t.price_cents == null ? 'Precio por definir' : money(t.price_cents/100)}${t.billing_cycle ? ' · '+cycleName[t.billing_cycle] : ''}</small><small>Saldo pendiente ${money(t.balance_cents/100)}</small><small class="${t.paid_until && t.paid_until < Date.now() ? 'due' : ''}">Cubierto hasta ${date(t.paid_until)}</small>${t.trial_until ? `<small>Prueba hasta ${date(t.trial_until)}</small>` : ''}${t.next_charge_at ? `<small>Próximo cobro ${date(t.next_charge_at)}</small>` : ''}</td>
           <td data-label="Ventas">${money(t.sales_7d)}<small>${t.tickets_7d} tickets${t.chats ? ' · Telegram ✔' : ''}</small></td>
           <td data-label="Dispositivos">${t.devices}<small>Última conexión ${t.last_seen ? new Date(t.last_seen).toLocaleString('es-MX') : '—'}</small></td>
           <td data-label="Acciones"><div class="row-actions">
             <button class="btn small" data-act="edit" data-id="${t.id}">Editar</button>
+            <button class="btn small" data-act="billing" data-id="${t.id}">Cobranza</button>
             <button class="btn small" data-act="code" data-id="${t.id}">Código</button>
             <button class="btn small" data-act="pass" data-id="${t.id}">Contraseña</button>
             <button class="btn small ${t.status === 'suspended' ? 'green' : 'danger ghost'}" data-act="toggle" data-id="${t.id}">${t.status === 'suspended' ? 'Reactivar' : 'Suspender'}</button>
@@ -71,7 +76,7 @@ import { openModal, toast } from './ui.js';
         <label for="client-catalog">Catálogo inicial</label><select id="client-catalog" name="catalog"><option value="empty">Vacío · Para capturar el menú del cliente</option><option value="sample">Ejemplo del giro · Para demostración</option><option value="rockalitas">Rock Alitas · Menú de prueba fotografiado</option></select><small class="muted">No se asignan existencias iniciales. Las fotos y los precios reales se editan dentro del negocio.</small>
         <div class="row2"><div><label for="client-email">Correo del dueño</label><input id="client-email" name="email" type="email" required autocomplete="off"></div><div><label for="client-password">Contraseña inicial</label><input id="client-password" name="password" type="password" required minlength="6" maxlength="256" autocomplete="new-password"></div></div>
         <div class="row2"><div><label for="client-pin">PIN del dueño</label><input id="client-pin" name="pin" type="password" required pattern="[0-9]{4}" maxlength="4" inputmode="numeric" autocomplete="new-password"><small class="muted">4 dígitos para entrar al punto de venta.</small></div><div><label for="client-state">Estado inicial</label><select id="client-state" name="status"><option value="trial">Prueba</option><option value="active">Activo · Cliente oficial</option></select></div></div>
-        <details><summary>Plan y notas comerciales</summary><label for="client-plan">Plan</label><input id="client-plan" name="plan" maxlength="120" placeholder="Nombre o precio del plan"><label for="client-paid">Pagado hasta</label><input id="client-paid" name="paid_date" type="date"><label for="client-notes">Notas</label><textarea id="client-notes" name="notes" maxlength="1000"></textarea></details>
+        <details><summary>Acuerdo y notas comerciales</summary><p class="muted">Después del alta, usa Editar para asignar un paquete, precio, servicios incluidos y fechas; Cobranza para registrar cargos y pagos.</p><label for="client-plan">Plan</label><input id="client-plan" name="plan" maxlength="120" placeholder="Nombre del acuerdo (opcional)"><label for="client-paid">Servicio cubierto hasta</label><input id="client-paid" name="paid_date" type="date"><label for="client-notes">Notas</label><textarea id="client-notes" name="notes" maxlength="1000"></textarea></details>
         <p class="error" id="client-error" role="alert" tabindex="-1"></p><div class="actions"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" id="save-client">Crear cliente</button></div></form>` });
       const form = m.$('#client-form');
       form.business_type.onchange = () => {
@@ -96,6 +101,7 @@ import { openModal, toast } from './ui.js';
       };
     }
     $('#create').onclick = createClient;
+    $('#plans').onclick = () => controls.plans().catch(e=>alert(e.message));
     $('#client-search').oninput = drawList;
     $('#client-status').onchange = drawList;
 
@@ -111,13 +117,9 @@ import { openModal, toast } from './ui.js';
           if (!confirm(`${t.status === 'suspended' ? 'Reactivar' : 'Suspender'} ${t.name}?`)) return;
           await call('/api/admin/tenants/update', { ...t, status: t.status === 'suspended' ? 'active' : 'suspended' });
         } else if (a.dataset.act === 'edit') {
-          const plan = prompt('Plan (ej. Básico $299/mes)', t.plan || '');
-          if (plan === null) return;
-          const until = prompt('Pagado hasta (AAAA-MM-DD)', t.paid_until ? new Date(t.paid_until).toISOString().slice(0, 10) : '');
-          if (until === null) return;
-          const notes = prompt('Notas', t.notes || '');
-          if (notes === null) return;
-          await call('/api/admin/tenants/update', { ...t, plan, paid_until: until ? Date.parse(`${until}T23:59:59`) : null, notes });
+          await controls.editClient(t);
+        } else if (a.dataset.act === 'billing') {
+          await controls.billing(t);
         } else if (a.dataset.act === 'code') {
           const r = await call('/api/admin/tenants/link-code', { id: t.id });
           alert(`Código para conectar un dispositivo a ${t.name}: ${r.code}\nCuenta: ${t.slug}\nVence en 15 minutos.`);

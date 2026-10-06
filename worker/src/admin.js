@@ -4,11 +4,13 @@ import { hashPassword, randomCode } from './auth.js';
 import { buildSeed, PRESETS } from '../../public/js/shared/presets.js';
 import { TABLES } from '../../public/js/shared/schema.js';
 import { uid } from '../../public/js/shared/util.js';
+import { subscriptions, updateTenant } from './subscriptions.js';
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 
 export async function adminApi(request, env, path) {
   if (!env.ADMIN_KEY || request.headers.get('x-admin-key') !== env.ADMIN_KEY) return json({ error: 'forbidden' }, 403);
+  if (path.startsWith('/api/admin/plans') || path.startsWith('/api/admin/billing')) return subscriptions(request, env, path);
   const b = request.method === 'POST' ? await request.json().catch(() => ({})) : {};
   const week = Date.now() - 7 * 86400000;
 
@@ -63,6 +65,8 @@ export async function adminApi(request, env, path) {
   if (path === '/api/admin/tenants') {
     const r = await env.DB.prepare(
       `SELECT t.id, t.slug, t.name, t.business_type, t.owner_email, t.status, t.plan, t.paid_until, t.notes, t.created_at,
+        t.plan_id,t.price_cents,t.billing_cycle,t.plan_includes,t.contact_phone,t.service_start,t.trial_until,t.next_charge_at,
+        (SELECT COALESCE(SUM(c.amount_cents-COALESCE((SELECT SUM(r.amount_cents) FROM subscription_receipts r WHERE r.charge_id=c.id AND r.voided_at IS NULL),0)),0) FROM subscription_charges c WHERE c.tenant_id=t.id AND c.voided_at IS NULL) AS balance_cents,
         (SELECT COUNT(*) FROM devices d WHERE d.tenant_id = t.id AND d.revoked = 0) AS devices,
         (SELECT MAX(last_seen) FROM devices d WHERE d.tenant_id = t.id) AS last_seen,
         (SELECT COUNT(*) FROM telegram_chats c WHERE c.tenant_id = t.id) AS chats,
@@ -74,10 +78,7 @@ export async function adminApi(request, env, path) {
   }
 
   if (path === '/api/admin/tenants/update') {
-    const status = ['active', 'suspended', 'trial'].includes(b.status) ? b.status : 'active';
-    await env.DB.prepare('UPDATE tenants SET status = ?, plan = ?, paid_until = ?, notes = ? WHERE id = ?')
-      .bind(status, b.plan || null, b.paid_until ? Number(b.paid_until) : null, b.notes || null, b.id).run();
-    return json({ ok: true });
+    return updateTenant(env, b);
   }
 
   if (path === '/api/admin/tenants/reset-password') {

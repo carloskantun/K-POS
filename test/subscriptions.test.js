@@ -1,0 +1,32 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createEnv } from '../hub/server.js';
+import worker from '../worker/src/index.js';
+
+test('paquetes, acuerdos y cobranza independientes de las ventas; saldo y anulaciones',async()=>{
+ const env=await createEnv(':memory:',{ADMIN_KEY:'test-key'});const ctx={waitUntil(p){p.catch(()=>{});}};
+ const call=async(path,body,key='test-key')=>{const r=await worker.fetch(new Request('https://pos.test'+path,{method:body?'POST':'GET',headers:{'content-type':'application/json','x-admin-key':key},body:body?JSON.stringify(body):undefined}),env,ctx);return {status:r.status,data:await r.json()};};
+ const owner={name:'Negocio',owner:'Carlos',slug:'cliente-plan',email:'owner@example.com',password:'abcdef123',pin:'1234',business_type:'bar',catalog:'empty'};
+ const made=await call('/api/admin/tenants/create',owner);assert.equal(made.status,201);const id=made.data.tenant.id;
+ assert.equal((await call('/api/admin/plans',undefined,'bad')).status,403);
+ assert.equal((await call('/api/admin/plans/save',{name:'Básico',cycle:'monthly',price_cents:-1})).status,400);
+ const plan=await call('/api/admin/plans/save',{name:'A medida',cycle:'monthly',price_cents:35000,includes:'Ventas\nInventario\nSoporte',description:'Servicios acordados'});assert.equal(plan.status,200);
+ const today=Date.now();const agreement=await call('/api/admin/tenants/update',{id,name:'Nuevo nombre',plan_id:plan.data.id,plan:'A medida',price_cents:32000,billing_cycle:'monthly',plan_includes:'Ventas\nInventario',service_start:today,paid_until:today+86400000});assert.equal(agreement.status,200);
+ const cfg=await env.DB.prepare("SELECT value FROM config WHERE tenant_id=? AND id='business'").bind(id).first();assert.equal(JSON.parse(cfg.value).name,'Nuevo nombre');
+ await call('/api/admin/plans/save',{id:plan.data.id,name:'A medida',cycle:'yearly',price_cents:90000,active:0});
+ let t=(await call('/api/admin/tenants')).data.tenants[0];assert.equal(t.price_cents,32000);assert.equal(t.plan_includes,'Ventas\nInventario');
+ await call('/api/admin/tenants/update',{id,status:'suspended'});t=(await call('/api/admin/tenants')).data.tenants[0];assert.equal(t.plan,'A medida');assert.equal(t.status,'suspended');
+ assert.equal((await call('/api/admin/tenants/update',{id,paid_until:today-100})).status,400);
+ assert.equal((await call('/api/admin/tenants/update',{id:'missing',notes:'x'})).status,404);
+ const charge=await call('/api/admin/billing/charge',{tenant_id:id,concept:'Octubre',amount_cents:32000,due_at:today});assert.equal(charge.status,201);const cid=charge.data.id;
+ const receipt={tenant_id:id,charge_id:cid,amount_cents:20000,paid_at:today,method:'transfer',reference:'Ref-1'};
+ const raced=await Promise.all([call('/api/admin/billing/receipt',receipt),call('/api/admin/billing/receipt',receipt)]);assert.deepEqual(raced.map(x=>x.status).sort(),[201,409]);const rid=raced.find(x=>x.status===201).data.id;
+ let bill=(await call('/api/admin/billing?id='+id)).data;assert.equal(bill.charges[0].paid_cents,20000);
+ t=(await call('/api/admin/tenants')).data.tenants[0];assert.equal(t.balance_cents,12000);assert.equal(t.sales_7d,0);assert.equal(t.paid_until,today+86400000);
+ assert.equal((await call('/api/admin/billing/receipt',{...receipt,tenant_id:'another'})).status,409);
+ assert.equal((await call('/api/admin/billing/void',{tenant_id:id,kind:'charge',id:cid,reason:'Error'})).status,409);
+ assert.equal((await call('/api/admin/billing/void',{tenant_id:id,kind:'receipt',id:rid,reason:'Captura duplicada'})).status,200);
+ bill=(await call('/api/admin/billing?id='+id)).data;assert.equal(bill.receipts.length,1);assert.equal(bill.receipts[0].void_reason,'Captura duplicada');assert.equal(bill.charges[0].paid_cents,0);
+ assert.equal((await call('/api/admin/billing/void',{tenant_id:id,kind:'charge',id:cid,reason:'Cargo incorrecto'})).status,200);
+ t=(await call('/api/admin/tenants')).data.tenants[0];assert.equal(t.balance_cents,0);
+});
