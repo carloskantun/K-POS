@@ -68,3 +68,17 @@ sus dispositivos, pero deja de sincronizar hasta que la reactives).
 Para decenas de negocios pequeños el plan gratuito de Workers suele alcanzar (100 mil peticiones al día). Cuando
 crezca, el plan Workers Paid (5 USD al mes) cubre D1, Durable Objects y límites mucho mayores. Revisa los precios
 vigentes en cloudflare.com, cambian con el tiempo.
+
+## Publicación realizada el 6 de octubre de 2026
+
+- POS: https://k-pos.carloskantun.workers.dev
+- Panel del proveedor: https://k-pos.carloskantun.workers.dev/admin.html
+- Worker `k-pos`, base D1 `k-pos` y Durable Object para avisos de sincronización, en la cuenta de Carlos.
+- Dominio propio pendiente; todos los negocios usan la misma dirección y se identifican por su cuenta al conectar.
+- Se migró exclusivamente Rock Alitas (`rock-alitas`) desde la base local: 48 productos, 3 usuarios y sus cuentas/pagos existentes. Las cuentas de prueba locales de taquería no se migraron.
+- Se creó `pruebas-kpos`, con catálogo de ejemplo y sin existencias iniciales. Usarlo para demostraciones y futuras pruebas de pagos.
+- Los accesos y el respaldo local se guardaron en una carpeta privada fuera del repositorio. La clave administrativa de producción es distinta de `admin-test`.
+- Telegram, recuperación por correo y Mercado Pago todavía no están conectados. Ver [Mercado Pago](MERCADO-PAGO.md).
+- La publicación automática desde GitHub sigue pendiente de su token de Cloudflare; la publicación inicial se hizo usando la sesión local autorizada.
+
+Para entrar a un negocio desde la URL pública: **Conectar este dispositivo → Usar correo y contraseña del dueño**, escribir su cuenta y entrar después con el PIN del usuario. Los datos del navegador en localhost no se trasladan automáticamente a otra dirección. La copia de Rock Alitas subida corresponde a lo sincronizado en la base local al momento de la migración; cualquier cambio que hubiese quedado exclusivamente en la cola del navegador requiere revisión antes de continuar trabajando en ambos entornos.

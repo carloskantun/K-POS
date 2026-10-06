@@ -53,7 +53,7 @@ async function api(request, env, ctx, path) {
 
   if (path === '/api/whoami') {
     const slug = slugFromHost(request, env) || url.searchParams.get('t');
-    if (!slug) return json({ slug: null });
+    if (!slug) return json({ slug: null, root_domain: env.ROOT_DOMAIN || null });
     const t = await env.DB.prepare('SELECT slug, name, business_type FROM tenants WHERE slug = ?').bind(cleanSlug(slug)).first();
     return json({ slug: t?.slug || cleanSlug(slug), name: t?.name || null, exists: !!t });
   }

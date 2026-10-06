@@ -26,8 +26,9 @@ const canSync = () => !!S.meta.device?.token && !S.meta.demo;
 async function pushOnce() {
   const box = await db.all('outbox');
   if (!box.length) return;
-  for (let i = 0; i < box.length; i += 150) {
-    const chunk = box.slice(i, i + 150);
+  // Deja margen en D1 gratuito para autenticación y filas rechazadas (hasta 50 consultas por petición).
+  for (let i = 0; i < box.length; i += 20) {
+    const chunk = box.slice(i, i + 20);
     const changes = [];
     for (const e of chunk) {
       const r = S.data[e.t]?.get(e.id);

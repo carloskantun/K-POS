@@ -18,8 +18,10 @@ export function mount(el, { onDone }) {
   let step = 'welcome';
   let type = null;
   let hostSlug = null;
+  let rootDomain = null;
 
   api('/api/whoami', { auth: false }).then((r) => {
+    rootDomain = r.root_domain || null;
     if (r.slug) {
       hostSlug = r.slug;
       if (step === 'welcome') draw();
@@ -51,7 +53,8 @@ export function mount(el, { onDone }) {
           <label>PIN de 4 dígitos (para entrar rápido)</label><input name="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required placeholder="1234">
           <label class="check"><input type="checkbox" name="cloud" checked> Crear cuenta en la nube <small>(varios dispositivos, respaldo y reportes por Telegram)</small></label>
           <div id="cloud">
-            <label>Nombre de tu cuenta (subdominio)</label><div class="slug"><input name="slug" pattern="[a-z0-9\\-]{3,30}" placeholder="taqueria-lupita"><span>.${esc(location.hostname.split('.').slice(-2).join('.'))}</span></div>
+            <label>Nombre de tu cuenta</label><div class="slug"><input name="slug" pattern="[a-z0-9\\-]{3,30}" placeholder="taqueria-lupita">${rootDomain ? `<span>.${esc(rootDomain)}</span>` : ''}</div>
+            <small class="muted">${rootDomain ? 'Tu negocio tendrá su propio subdominio.' : 'Identifica tu negocio al conectar dispositivos. Todos usan esta misma dirección.'}</small>
             <label>Correo</label><input name="email" type="email" placeholder="tu@correo.com">
             <label>Contraseña</label><input name="password" type="password" minlength="6" placeholder="Mínimo 6 caracteres">
           </div>
