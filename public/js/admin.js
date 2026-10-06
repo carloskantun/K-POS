@@ -1,5 +1,6 @@
+import { support } from './admin-support.js';
 import { commercial } from './admin-commercial.js';
-import { PRESETS } from './shared/presets.js';
+import { PRESETS, MODULES } from './shared/presets.js';
 import { openModal, toast } from './ui.js';
 
     const $ = (s) => document.querySelector(s);
@@ -10,6 +11,7 @@ import { openModal, toast } from './ui.js';
     let key = sessionStorage.getItem('kpos.admin') || '';
     let tenants = [];
     const controls = commercial({call, reload:load});
+    const assistance = support({call,reload:load});
 
     async function call(path, body) {
       const res = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'x-admin-key': key, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
@@ -61,6 +63,7 @@ import { openModal, toast } from './ui.js';
           <td data-label="Dispositivos">${t.devices}<small>Última conexión ${t.last_seen ? new Date(t.last_seen).toLocaleString('es-MX') : '—'}</small></td>
           <td data-label="Acciones"><div class="row-actions">
             <button class="btn small" data-act="edit" data-id="${t.id}">Editar</button>
+            <a class="btn small" href="/support.html?id=${encodeURIComponent(t.id)}">Ver POS</a><button class="btn small" data-act="monitor" data-id="${t.id}">Usuarios y dispositivos</button>
             <button class="btn small" data-act="billing" data-id="${t.id}">Cobranza</button>
             <button class="btn small" data-act="code" data-id="${t.id}">Código</button>
             <button class="btn small" data-act="pass" data-id="${t.id}">Contraseña</button>
@@ -73,17 +76,20 @@ import { openModal, toast } from './ui.js';
         <p class="muted">Crea el negocio y el acceso del dueño. Cada cliente conserva sus datos separados.</p>
         <div class="row2"><div><label for="client-name">Nombre del negocio</label><input id="client-name" name="name" required maxlength="80" autofocus placeholder="Nombre comercial"></div><div><label for="client-owner">Nombre del dueño</label><input id="client-owner" name="owner" required maxlength="80"></div></div>
         <div class="row2"><div><label for="client-slug">Nombre de cuenta</label><input id="client-slug" name="slug" required pattern="[a-z0-9][a-z0-9-]{1,28}[a-z0-9]" minlength="3" maxlength="30" placeholder="mi-negocio"><small class="muted">Único, sin espacios. El cliente lo usa para entrar.</small></div><div><label for="client-type">Giro</label><select id="client-type" name="business_type">${Object.entries(PRESETS).filter(([k]) => k !== 'rockalitas').map(([k,p]) => `<option value="${k}" ${k === 'bar' ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select></div></div>
-        <label for="client-catalog">Catálogo inicial</label><select id="client-catalog" name="catalog"><option value="empty">Vacío · Para capturar el menú del cliente</option><option value="sample">Ejemplo del giro · Para demostración</option><option value="rockalitas">Rock Alitas · Menú de prueba fotografiado</option></select><small class="muted">No se asignan existencias iniciales. Las fotos y los precios reales se editan dentro del negocio.</small>
+        <p class="muted" id="client-modules"></p><label for="client-catalog">Catálogo inicial</label><select id="client-catalog" name="catalog"><option value="empty">Vacío · Para capturar el menú del cliente</option><option value="sample">Ejemplo del giro · Para demostración</option><option value="rockalitas">Rock Alitas · Menú de prueba fotografiado</option></select><small class="muted">No se asignan existencias iniciales. Las fotos y los precios reales se editan dentro del negocio.</small>
         <div class="row2"><div><label for="client-email">Correo del dueño</label><input id="client-email" name="email" type="email" required autocomplete="off"></div><div><label for="client-password">Contraseña inicial</label><input id="client-password" name="password" type="password" required minlength="6" maxlength="256" autocomplete="new-password"></div></div>
         <div class="row2"><div><label for="client-pin">PIN del dueño</label><input id="client-pin" name="pin" type="password" required pattern="[0-9]{4}" maxlength="4" inputmode="numeric" autocomplete="new-password"><small class="muted">4 dígitos para entrar al punto de venta.</small></div><div><label for="client-state">Estado inicial</label><select id="client-state" name="status"><option value="trial">Prueba</option><option value="active">Activo · Cliente oficial</option></select></div></div>
         <details><summary>Acuerdo y notas comerciales</summary><p class="muted">Después del alta, usa Editar para asignar un paquete, precio, servicios incluidos y fechas; Cobranza para registrar cargos y pagos.</p><label for="client-plan">Plan</label><input id="client-plan" name="plan" maxlength="120" placeholder="Nombre del acuerdo (opcional)"><label for="client-paid">Servicio cubierto hasta</label><input id="client-paid" name="paid_date" type="date"><label for="client-notes">Notas</label><textarea id="client-notes" name="notes" maxlength="1000"></textarea></details>
         <p class="error" id="client-error" role="alert" tabindex="-1"></p><div class="actions"><button type="button" class="btn" data-act="close">Cancelar</button><button class="btn primary" id="save-client">Crear cliente</button></div></form>` });
       const form = m.$('#client-form');
       form.business_type.onchange = () => {
+        const enabled=Object.entries(MODULES).filter(([k])=>PRESETS[form.business_type.value].modules[k]).map(([,m])=>m.label);
+        m.$('#client-modules').textContent='Ventas, inventario, caja y reportes son comunes. Funciones iniciales del giro: '+(enabled.join(', ')||'sin funciones adicionales')+'. Podrás personalizarlas desde Editar.';
         const valid = ['bar','restaurante'].includes(form.business_type.value);
         form.catalog.querySelector('[value=rockalitas]').disabled = !valid;
         if (!valid && form.catalog.value === 'rockalitas') form.catalog.value = 'empty';
       };
+      form.business_type.onchange();
       form.onsubmit = async e => {
         e.preventDefault();
         const button = m.$('#save-client');
@@ -124,10 +130,9 @@ import { openModal, toast } from './ui.js';
           const r = await call('/api/admin/tenants/link-code', { id: t.id });
           alert(`Código para conectar un dispositivo a ${t.name}: ${r.code}\nCuenta: ${t.slug}\nVence en 15 minutos.`);
         } else if (a.dataset.act === 'pass') {
-          const p = prompt(`Nueva contraseña para ${t.owner_email}`);
-          if (!p) return;
-          await call('/api/admin/tenants/reset-password', { id: t.id, password: p });
-          alert('Contraseña actualizada');
+          assistance.password(t);
+        } else if (a.dataset.act === 'monitor') {
+          await assistance.monitor(t);
         }
         load();
       } catch (err) { alert(err.message); }

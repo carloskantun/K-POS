@@ -114,6 +114,7 @@ function connectLive() {
 }
 
 export function startSync() {
+  reportPresence();
   setPushHook(() => {
     clearTimeout(pushTimer);
     pushTimer = setTimeout(syncNow, 250);
@@ -128,3 +129,9 @@ export function startSync() {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(); });
   tick();
 }
+
+// Actividad reportada por dispositivo; expira en el panel si dejan de llegar avisos.
+let presenceQueue=Promise.resolve();
+function reportPresence(){const user_id=S.user?.id||null;presenceQueue=presenceQueue.then(()=>canSync()?api('/api/presence',{method:'POST',body:{user_id}}):null).catch(()=>{});}
+window.addEventListener('kpos:user',reportPresence);
+setInterval(reportPresence,30000);

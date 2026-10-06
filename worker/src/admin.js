@@ -4,6 +4,7 @@ import { hashPassword, randomCode } from './auth.js';
 import { buildSeed, PRESETS } from '../../public/js/shared/presets.js';
 import { TABLES } from '../../public/js/shared/schema.js';
 import { uid } from '../../public/js/shared/util.js';
+import { supportApi } from './admin-support.js';
 import { subscriptions, updateTenant } from './subscriptions.js';
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -11,6 +12,7 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), { status
 export async function adminApi(request, env, path) {
   if (!env.ADMIN_KEY || request.headers.get('x-admin-key') !== env.ADMIN_KEY) return json({ error: 'forbidden' }, 403);
   if (path.startsWith('/api/admin/plans') || path.startsWith('/api/admin/billing')) return subscriptions(request, env, path);
+  if (['/api/admin/monitor','/api/admin/snapshot','/api/admin/devices/revoke'].includes(path)) return supportApi(request,env,path);
   const b = request.method === 'POST' ? await request.json().catch(() => ({})) : {};
   const week = Date.now() - 7 * 86400000;
 
@@ -66,6 +68,7 @@ export async function adminApi(request, env, path) {
     const r = await env.DB.prepare(
       `SELECT t.id, t.slug, t.name, t.business_type, t.owner_email, t.status, t.plan, t.paid_until, t.notes, t.created_at,
         t.plan_id,t.price_cents,t.billing_cycle,t.plan_includes,t.contact_phone,t.service_start,t.trial_until,t.next_charge_at,
+        (SELECT value FROM config WHERE tenant_id=t.id AND id='business') AS business_config,
         (SELECT COALESCE(SUM(c.amount_cents-COALESCE((SELECT SUM(r.amount_cents) FROM subscription_receipts r WHERE r.charge_id=c.id AND r.voided_at IS NULL),0)),0) FROM subscription_charges c WHERE c.tenant_id=t.id AND c.voided_at IS NULL) AS balance_cents,
         (SELECT COUNT(*) FROM devices d WHERE d.tenant_id = t.id AND d.revoked = 0) AS devices,
         (SELECT MAX(last_seen) FROM devices d WHERE d.tenant_id = t.id) AS last_seen,
@@ -74,7 +77,7 @@ export async function adminApi(request, env, path) {
         (SELECT COUNT(*) FROM orders o WHERE o.tenant_id = t.id AND o.status = 'paid' AND o.closed_at > ?) AS tickets_7d
        FROM tenants t ORDER BY t.created_at DESC`,
     ).bind(week, week).all();
-    return json({ tenants: r.results || [] });
+    return json({ tenants: (r.results || []).map(t=>{let modules={};try{modules=JSON.parse(t.business_config||'{}').modules||{};}catch{}delete t.business_config;return {...t,modules};}) });
   }
 
   if (path === '/api/admin/tenants/update') {
@@ -82,8 +85,10 @@ export async function adminApi(request, env, path) {
   }
 
   if (path === '/api/admin/tenants/reset-password') {
-    if (String(b.password || '').length < 6) return json({ error: 'Mínimo 6 caracteres' }, 400);
+    if (typeof b.password !== 'string' || b.password.length < 6 || b.password.length > 256) return json({ error: 'Mínimo 6 caracteres' }, 400);
+    if (!await env.DB.prepare('SELECT id FROM tenants WHERE id=?').bind(b.id||'').first()) return json({error:'Cliente no encontrado.'},404);
     await env.DB.prepare('UPDATE tenants SET owner_pass = ? WHERE id = ?').bind(await hashPassword(String(b.password)), b.id).run();
+    if (b.revoke_devices === true) await env.DB.prepare('UPDATE devices SET revoked=1,current_user_id=NULL WHERE tenant_id=?').bind(b.id).run();
     return json({ ok: true });
   }
 

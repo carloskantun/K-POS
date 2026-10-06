@@ -3,6 +3,7 @@ import { authDevice, hashPassword, verifyPassword, newToken, tokenHash, randomCo
 import { push, pull } from './sync.js';
 import { loadSummary, getConfig, buildReport } from './reports.js';
 import { handleWebhook, scheduled, afterPush, chatsOf, sendToTenant, tgCall } from './telegram.js';
+import { PRESETS } from '../../public/js/shared/presets.js';
 import { uid } from '../../public/js/shared/util.js';
 import { TenantLive, notifyLive } from './live.js';
 import { tooMany, clientIp } from './limits.js';
@@ -156,6 +157,14 @@ async function api(request, env, ctx, path) {
   ctx.waitUntil(env.DB.prepare('UPDATE devices SET last_seen = ? WHERE id = ?').bind(Date.now(), dev.id).run());
   const tenantId = dev.tenant_id;
 
+  if (path === '/api/presence' && method === 'POST') {
+    const b=await body(request);
+    const who=b.user_id==null?null:String(b.user_id);
+    if(who && !await env.DB.prepare('SELECT id FROM users WHERE tenant_id=? AND id=? AND active<>0 AND deleted=0').bind(tenantId,who).first()) return fail(400,'Usuario no válido para este negocio.');
+    await env.DB.prepare('UPDATE devices SET current_user_id=?,user_seen_at=? WHERE id=?').bind(who,Date.now(),dev.id).run();
+    return json({ok:true});
+  }
+
   if (path === '/api/live') {
     if (!env.LIVE) return fail(501, 'Tiempo real no disponible en este servidor');
     const u = new URL(request.url);
@@ -166,6 +175,8 @@ async function api(request, env, ctx, path) {
   if (path === '/api/sync/push' && method === 'POST') {
     const b = await body(request);
     const res = await push(env, tenantId, b.changes);
+    const configChange=res.applied.find(c=>c.t==='config'&&c.r.id==='business');
+    if(configChange){let c=configChange.r.value;try{if(typeof c==='string')c=JSON.parse(c);}catch{c=null;}if(c&&Object.hasOwn(PRESETS,c.type)&&typeof c.name==='string')await env.DB.prepare('UPDATE tenants SET business_type=?,name=? WHERE id=?').bind(c.type,c.name.slice(0,80),tenantId).run();}
     if (res.applied.length) {
       ctx.waitUntil(afterPush(env, tenantId, res.applied).catch((e) => console.error('afterPush', e)));
       ctx.waitUntil(notifyLive(env, tenantId, dev.id).catch((e) => console.error('live', e)));

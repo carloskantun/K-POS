@@ -1,4 +1,5 @@
 // Planes y cobranza de K-POS. No son pagos de las ventas del restaurante.
+import { PRESETS, MODULES } from '../../public/js/shared/presets.js';
 import { uid } from '../../public/js/shared/util.js';
 const json=(d,s=200)=>new Response(JSON.stringify(d),{status:s,headers:{'content-type':'application/json','cache-control':'no-store'}});
 const text=(v,max)=>typeof v==='string' && v.length<=max;
@@ -49,12 +50,16 @@ export async function subscriptions(request,env,path){
 export async function updateTenant(env,b){
  const old=await env.DB.prepare('SELECT * FROM tenants WHERE id=?').bind(b.id).first();if(!old)return json({error:'Cliente no encontrado.'},404);
  const t={...old,...b};
+ if(!Object.hasOwn(PRESETS,t.business_type))return json({error:'Giro inválido.'},400);
+ if(b.modules && (typeof b.modules!=='object'||Array.isArray(b.modules)||Object.entries(b.modules).some(([k,v])=>!Object.hasOwn(MODULES,k)||typeof v!=='boolean')))return json({error:'Funciones inválidas.'},400);
+ const changed=t.business_type!==old.business_type;
+ const modules=b.modules||(changed?Object.fromEntries(Object.keys(MODULES).map(k=>[k,!!PRESETS[t.business_type].modules[k]])):null);
  if(!text(t.name,80)||!t.name.trim()||!text(t.owner_email,254)||!/^\S+@\S+\.\S+$/.test(t.owner_email)||!['active','trial','suspended'].includes(t.status)||!text(t.plan||'',120)||!text(t.notes||'',1000)||!text(t.contact_phone||'',80)||!text(t.plan_includes||'',3000)||!(t.price_cents==null||t.price_cents===0||cents(t.price_cents))||(t.billing_cycle&&!cycles.includes(t.billing_cycle))||!['paid_until','service_start','trial_until','next_charge_at'].every(k=>t[k]==null||timestamp(t[k])))return json({error:'Revisa los datos, importes y fechas del cliente.'},400);
  if(t.service_start&&t.paid_until&&t.paid_until<t.service_start)return json({error:'La fecha de servicio cubierto no puede ser anterior al inicio.'},400);
  if(t.plan_id&&!await env.DB.prepare('SELECT id FROM subscription_plans WHERE id=?').bind(t.plan_id).first())return json({error:'Paquete no encontrado.'},400);
  // Conserva el nombre en el POS y avisa mediante la secuencia de sincronización.
  const now=Date.now();await env.DB.batch([
- env.DB.prepare('UPDATE tenants SET name=?,owner_email=?,status=?,plan=?,paid_until=?,notes=?,plan_id=?,price_cents=?,billing_cycle=?,plan_includes=?,contact_phone=?,service_start=?,trial_until=?,next_charge_at=?,seq=seq+1 WHERE id=?').bind(t.name.trim(),t.owner_email.trim().toLowerCase(),t.status,t.plan||null,t.paid_until??null,t.notes||null,t.plan_id||null,t.price_cents??null,t.billing_cycle||null,t.plan_includes||null,t.contact_phone||null,t.service_start??null,t.trial_until??null,t.next_charge_at??null,t.id),
- env.DB.prepare("UPDATE config SET value=json_set(value,'$.name',?),updated_at=?,seq=(SELECT seq FROM tenants WHERE id=?) WHERE tenant_id=? AND id='business'").bind(t.name.trim(),now,t.id,t.id)
+ env.DB.prepare('UPDATE tenants SET business_type=?,name=?,owner_email=?,status=?,plan=?,paid_until=?,notes=?,plan_id=?,price_cents=?,billing_cycle=?,plan_includes=?,contact_phone=?,service_start=?,trial_until=?,next_charge_at=?,seq=seq+1 WHERE id=?').bind(t.business_type,t.name.trim(),t.owner_email.trim().toLowerCase(),t.status,t.plan||null,t.paid_until??null,t.notes||null,t.plan_id||null,t.price_cents??null,t.billing_cycle||null,t.plan_includes||null,t.contact_phone||null,t.service_start??null,t.trial_until??null,t.next_charge_at??null,t.id),
+ env.DB.prepare("UPDATE config SET value=json_set(value,'$.name',?,'$.type',?,'$.modules',json(COALESCE(?,json_extract(value,'$.modules'),'{}'))),updated_at=?,seq=(SELECT seq FROM tenants WHERE id=?) WHERE tenant_id=? AND id='business'").bind(t.name.trim(),t.business_type,modules?JSON.stringify(modules):null,now,t.id,t.id)
  ]);return json({ok:true});
 }

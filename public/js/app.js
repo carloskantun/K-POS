@@ -151,7 +151,7 @@ app.addEventListener('click', async (e) => {
 on((changed) => {
   if (changed.has('_sync') || changed.size) renderHeader();
   if (changed.has('order_items') || changed.has('orders')) updateBadges();
-  if (changed.has('config') && current) renderNav(current);
+  if (changed.has('config') && current) { if (!visibleNav().some(n=>n.id===current)) { go(defaultRoute()); } else renderNav(current); }
   if (changed.has('users') && S.user) {
     const u = get('users', S.user.id);
     if (!u || u.deleted || !u.active) { login(null).then(render); return; }

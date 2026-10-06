@@ -35,6 +35,7 @@ export function mount(el, params) {
     const sb = el.querySelector('#sb');
     const fn = { business, products, rockmenu, categories, users, tables, branches, device, telegram }[section];
     sb.innerHTML = fn();
+    if(section==='business'){const f=sb.querySelector('#biz');f.type.onchange=()=>{for(const k of Object.keys(MODULES))f[`mod_${k}`].checked=!!PRESETS[f.type.value].modules[k];};}
     if (section === 'telegram') loadTelegram();
     if (section === 'device') loadDevices();
   }
@@ -45,7 +46,7 @@ export function mount(el, params) {
     return `<h2>Negocio</h2><form class="form" id="biz">
       <label>Nombre</label><input name="name" value="${esc(c.name || '')}">
       <label>Giro</label><select name="type">${Object.entries(PRESETS).map(([k, p]) => `<option value="${k}" ${c.type === k ? 'selected' : ''}>${p.emoji} ${esc(p.label)}</option>`).join('')}</select>
-      <h3>Funciones</h3><div class="toggles">${Object.entries(MODULES).map(([k, m]) => `<label class="toggle"><input type="checkbox" name="mod_${k}" ${c.modules?.[k] ? 'checked' : ''}><span><b>${esc(m.label)}</b><small>${esc(m.help)}</small></span></label>`).join('')}</div>
+      <p class="muted">Cambiar de giro aplica sus funciones recomendadas. Puedes ajustarlas antes de guardar. Conserva productos, usuarios y ventas; no sustituye el catálogo.</p><h3>Funciones</h3><div class="toggles">${Object.entries(MODULES).map(([k, m]) => `<label class="toggle"><input type="checkbox" name="mod_${k}" ${c.modules?.[k] ? 'checked' : ''}><span><b>${esc(m.label)}</b><small>${esc(m.help)}</small></span></label>`).join('')}</div>
       <h3>Reglas</h3>
       <label class="toggle"><input type="checkbox" name="waiters_can_charge" ${c.waiters_can_charge !== false ? 'checked' : ''}><span><b>Los meseros pueden cobrar</b><small>Si no, solo caja/encargado cobra</small></span></label>
       <label class="toggle"><input type="checkbox" name="allow_negative_stock" ${c.allow_negative_stock !== false ? 'checked' : ''}><span><b>Vender aunque el sistema diga agotado</b><small>Solo muestra un aviso</small></span></label>

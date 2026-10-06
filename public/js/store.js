@@ -272,5 +272,5 @@ export async function resetDevice() {
 
 export function login(user) {
   S.user = user;
-  return setMeta('user_id', user?.id || null);
+  return setMeta('user_id', user?.id || null).then(()=>{window.dispatchEvent(new Event('kpos:user'));});
 }

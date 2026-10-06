@@ -1,0 +1,21 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {createEnv} from '../hub/server.js';import worker from '../worker/src/index.js';
+test('soporte: monitoreo aislado, consulta sin secretos, cambio de giro y contraseña con revocación',async()=>{
+ const env=await createEnv(':memory:',{ADMIN_KEY:'key',RATE_LIMIT:'off'});const ctx={waitUntil:p=>p.catch(()=>{})};
+ const call=async(path,b,token,admin=true)=>{const r=await worker.fetch(new Request('https://pos.test'+path,{method:b?'POST':'GET',headers:{'content-type':'application/json',...(admin?{'x-admin-key':'key'}:{}),...(token?{authorization:'Bearer '+token}:{})},body:b?JSON.stringify(b):undefined}),env,ctx);return {status:r.status,data:await r.json()};};
+ const fields={name:'Restaurante',owner:'Dueño',slug:'rest-test',email:'x@example.com',password:'abcdefg',pin:'1234',business_type:'restaurante',catalog:'sample'};
+ const made=await call('/api/admin/tenants/create',fields);const id=made.data.tenant.id;
+ const login=await call('/api/login',{slug:fields.slug,email:fields.email,password:fields.password});const token=login.data.token;
+ const snap=(await call('/api/admin/snapshot?id='+id)).data;assert.equal(snap.products.length,10);assert.ok(!JSON.stringify(snap).includes('pin_hash'));assert.ok(!JSON.stringify(snap).includes('owner_pass'));assert.ok(!JSON.stringify(snap).includes('token_hash'));
+ assert.equal((await call('/api/admin/monitor?id='+id,undefined,undefined,false)).status,403);
+ assert.equal((await call('/api/presence',{user_id:'other'},token,false)).status,400);
+ const user=snap.users[0];assert.equal((await call('/api/presence',{user_id:user.id},token,false)).status,200);
+ let monitor=(await call('/api/admin/monitor?id='+id)).data;assert.equal(monitor.devices[0].current_user_id,user.id);assert.ok(monitor.devices[0].user_seen_at);
+ await call('/api/presence',{user_id:null},token,false);monitor=(await call('/api/admin/monitor?id='+id)).data;assert.equal(monitor.devices[0].current_user_id,null);
+ assert.equal((await call('/api/admin/tenants/update',{id,business_type:'fruteria'})).status,200);
+ const fruit=(await call('/api/admin/snapshot?id='+id)).data;assert.equal(fruit.modules.weight,true);assert.equal(fruit.modules.tables,false);assert.equal(fruit.products.length,snap.products.length);assert.equal(fruit.tables.length,snap.tables.length);
+ assert.equal((await call('/api/admin/tenants/update',{id,modules:{weight:'yes'}})).status,400);
+ assert.equal((await call('/api/admin/tenants/reset-password',{id,password:'new-password',revoke_devices:true})).status,200);
+ assert.equal((await call('/api/presence',{user_id:null},token,false)).status,401);
+ assert.notEqual((await call('/api/login',{slug:fields.slug,email:fields.email,password:fields.password})).status,200);
+ assert.equal((await call('/api/login',{slug:fields.slug,email:fields.email,password:'new-password'})).status,200);
+});
