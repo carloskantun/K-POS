@@ -4,7 +4,7 @@ import { push, pull } from './sync.js';
 import { loadSummary, getConfig, buildReport } from './reports.js';
 import { handleWebhook, scheduled, afterPush, chatsOf, sendToTenant, tgCall } from './telegram.js';
 import { PRESETS } from '../../public/js/shared/presets.js';
-import { uid } from '../../public/js/shared/util.js';
+import { uid, localDate, shiftDate } from '../../public/js/shared/util.js';
 import { TenantLive, notifyLive } from './live.js';
 import { tooMany, clientIp } from './limits.js';
 import { sendMail } from './mail.js';
@@ -131,6 +131,7 @@ async function api(request, env, ctx, path) {
 
   if (path === '/api/admin/telegram-setup' && method === 'POST') {
     if (!env.ADMIN_KEY || request.headers.get('x-admin-key') !== env.ADMIN_KEY) return fail(403, 'forbidden');
+    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) return fail(400, 'Configura el bot y el secreto de webhook antes de activarlo.');
     const hook = await tgCall(env, 'setWebhook', {
       url: `${url.origin}/api/telegram/webhook`,
       secret_token: env.TELEGRAM_WEBHOOK_SECRET || undefined,
@@ -201,6 +202,18 @@ async function api(request, env, ctx, path) {
     return json({ code, expires_at: expires, bot: env.TELEGRAM_BOT_USERNAME || null });
   }
 
+  if (path === '/api/reports/kpis' && method === 'GET') {
+    const cfg = await getConfig(env, tenantId);
+    const date = url.searchParams.get('date') || localDate(Date.now(), cfg.timezone);
+    const days = Number(url.searchParams.get('days') || 7);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || ![1,7,30].includes(days) || !Number.isFinite(Date.parse(date)) || new Date(`${date}T12:00:00Z`).toISOString().slice(0,10) !== date) return fail(400, 'Periodo inválido');
+    const branchId = url.searchParams.get('branch') || null;
+    const from = shiftDate(date, 1-days), previousEnd = shiftDate(from,-1);
+    const current = await loadSummary(env, tenantId, {date:from,endDate:date,tz:cfg.timezone,branchId});
+    const previous = await loadSummary(env, tenantId, {date:shiftDate(from,-days),endDate:previousEnd,tz:cfg.timezone,branchId});
+    return json({current, previous, from, to:date, days, generated_at:Date.now()});
+  }
+
   if (path === '/api/reports/summary' && method === 'GET') {
     const cfg = await getConfig(env, tenantId);
     const date = url.searchParams.get('date');
@@ -239,7 +252,8 @@ async function api(request, env, ctx, path) {
   }
 
   if (path === '/api/telegram/chats' && method === 'GET') {
-    return json({ chats: await chatsOf(env, tenantId), bot: env.TELEGRAM_BOT_USERNAME || null, configured: !!env.TELEGRAM_BOT_TOKEN });
+    const delivery = await env.DB.prepare('SELECT COUNT(CASE WHEN sent_at IS NULL THEN 1 END) AS pending, COUNT(CASE WHEN sent_at IS NULL AND attempts>0 THEN 1 END) AS retrying, MAX(sent_at) AS last_sent FROM telegram_outbox WHERE tenant_id=?').bind(tenantId).first();
+    return json({ chats: await chatsOf(env, tenantId), bot: env.TELEGRAM_BOT_USERNAME || null, configured: !!env.TELEGRAM_BOT_TOKEN && !!env.TELEGRAM_WEBHOOK_SECRET, delivery });
   }
 
   if (path === '/api/telegram/chats' && method === 'DELETE') {

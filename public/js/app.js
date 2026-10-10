@@ -9,10 +9,11 @@ import * as tables from './views/tables.js';
 import * as kitchen from './views/kitchen.js';
 import * as inventory from './views/inventory.js';
 import * as cash from './views/cash.js';
+import * as results from './views/results.js';
 import * as reports from './views/reports.js';
 import * as settings from './views/settings.js';
 
-const VIEWS = { pos, tables, kitchen, inventory, cash, reports, settings };
+const VIEWS = { pos, tables, kitchen, inventory, cash, results, reports, settings };
 
 const NAV = [
   { id: 'pos', label: 'Vender', icon: '🛒', perm: 'pos' },
@@ -20,6 +21,7 @@ const NAV = [
   { id: 'kitchen', label: 'Comandas', icon: '👨‍🍳', perm: 'kitchen', module: 'kitchen' },
   { id: 'inventory', label: 'Inventario', icon: '📦', perm: 'inventory' },
   { id: 'cash', label: 'Caja', icon: '🏦', perm: 'cash' },
+  { id: 'results', label: 'Resultados', icon: '📈', perm: 'reports' },
   { id: 'reports', label: 'Reportes', icon: '📊', perm: 'reports' },
   { id: 'settings', label: 'Ajustes', icon: '⚙️', perm: 'settings' },
 ];

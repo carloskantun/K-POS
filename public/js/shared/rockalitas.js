@@ -6,7 +6,7 @@ const sauceOptions = [
   'Las Beatles · Tamarindo', 'La Revolución de Emiliano Zapata · Jamaica/cacahuate/ajonjolí',
   'Rock & Cheese · Ajo/parmesano (solo fines de semana)',
 ];
-const sauces = () => ({ name: 'Salsa de la casa', required: true, max: 1, options: sauceOptions.map(n => [n, 0]) });
+const sauces = (total = null) => ({ ...(total ? { type: 'allocation', total, unit: 'piezas' } : {}), name: 'Salsa de la casa', required: true, max: 1, options: sauceOptions.map(n => [n, 0]) });
 const choice = (name, names) => ({ name, required: true, max: 1, options: names.map(n => [n, 0]) });
 const food = (key, name, price, cat, detail, mods = []) => ({ key, name, price, cat, detail, emoji: '🍽️', station: 'cocina', mods });
 const drink = (key, name, price, cat, detail, mods = []) => ({ key, name, price, cat, detail, emoji: '🥤', station: 'barra', mods });
@@ -14,7 +14,7 @@ export const ROCKALITAS_PENDING = [
   'Lemon Tree: precio cortado en IMG_0447.',
   'Los de a $100 varos: varios nombres tapados en IMG_0448; solo Gajos de cebolla está completo.',
   'Marcas de cerveza, sabores de refresco y agua del día: no especificados.',
-  'Cantidad de salsas por orden y disponibilidad de Rock & Cheese: confirmar antes de operar.',
+  'Disponibilidad de Rock & Cheese: confirmar antes de operar.',
 ];
 export const ROCKALITAS = {
   label: 'Rock Alitas · Menú real', emoji: '🎸', tables: 12,
@@ -28,8 +28,8 @@ export const ROCKALITAS = {
     ['shots', 'Shots', '🥃', '#7c3aed'], ['bebidas', 'Sin alcohol', '🥤', '#2563eb'],
   ],
   products: [
-    ...[[10,320],[20,440],[30,540]].map(([n,price]) => food(`alitas-${n}`, `Alitas · ${n} piezas`, price, 'alitas', 'Incluye apio/zanahoria y 1 aderezo de 2 oz.', [sauces()])),
-    ...[['pueblo','Todos somos pueblo',10,360,'1 refresco de sabor, papas con sal, snack de zanahoria y apio, 1 aderezo.'],['nirvana','Nirvana',20,480,'1 refresco de sabor, papas con sal, snack de zanahoria y apio, 2 aderezos.'],['iron','Iron Maiden',30,610,'1 refresco de sabor, papas con sal, snack de zanahoria y apio, 3 aderezos.'],['led','Led Zeppelin',40,740,'2 refrescos de sabor, ½ kilo de papas con sal, snack de zanahoria y apio, 4 aderezos.']].map(([k,n,q,p,d]) => food(`paquete-${k}`, `${n} · ${q} alitas`, p, 'paquetes', d, [sauces()])),
+    ...[[10,320],[20,440],[30,540]].map(([n,price]) => food(`alitas-${n}`, `Alitas · ${n} piezas`, price, 'alitas', 'Incluye apio/zanahoria y 1 aderezo de 2 oz.', [sauces(n)])),
+    ...[['pueblo','Todos somos pueblo',10,360,'1 refresco de sabor, papas con sal, snack de zanahoria y apio, 1 aderezo.'],['nirvana','Nirvana',20,480,'1 refresco de sabor, papas con sal, snack de zanahoria y apio, 2 aderezos.'],['iron','Iron Maiden',30,610,'1 refresco de sabor, papas con sal, snack de zanahoria y apio, 3 aderezos.'],['led','Led Zeppelin',40,740,'2 refrescos de sabor, ½ kilo de papas con sal, snack de zanahoria y apio, 4 aderezos.']].map(([k,n,q,p,d]) => food(`paquete-${k}`, `${n} · ${q} alitas`, p, 'paquetes', d, [sauces(q)])),
     food('crazy', 'Crazy Legs Bucket · 4 piezas',180,'entradas','2 piernitas y 2 muslitos marinados con cajún y salsa de la casa.',[sauces()]),
     food('camarockers','Camarockers · 10 camarones',250,'entradas','Camarones capeados en tempura de cerveza y aderezo cajún; papas y snack de verduras.'),
     food('tiras','Rock a tiras de pollo · 4 piezas',200,'entradas','Incluye aderezo de 2 oz.'),
@@ -95,7 +95,7 @@ export function buildRockMenu(products = [], categories = []) {
     id:menuId(p.key),name:p.name,category_id:catIds[p.cat],price:p.price,cost:0,unit:'pza',
     emoji:p.emoji,image:'',barcode:'',station:p.station,track_stock:0,stock_min:0,
     recipe:[],sort:products.length+i,active:1,sellable:1,price_wholesale:null,wholesale_min:null,
-    modifiers:p.mods.map((g,j) => ({id:menuId(`${p.key}-group-${j}`),name:g.name,required:g.required,max:g.max,
+    modifiers:p.mods.map((g,j) => ({id:menuId(`${p.key}-group-${j}`),name:g.name,required:g.required,max:g.max,...(g.type ? {type:g.type,total:g.total,unit:g.unit} : {}),
       options:g.options.map(([name,price],k) => ({id:menuId(`${p.key}-option-${j}-${k}`),name,price}))})),
   }]));
   return rows;

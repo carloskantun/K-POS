@@ -12,8 +12,9 @@ export async function getConfig(env, tenantId) {
 
 const all = async (stmt, table) => ((await stmt.all()).results || []).map((r) => decodeRow(table, r));
 
-export async function loadSummary(env, tenantId, { date, tz, branchId = null }) {
-  const { from, to } = dayRange(date, tz);
+export async function loadSummary(env, tenantId, { date, endDate = date, tz, branchId = null }) {
+  const { from } = dayRange(date, tz);
+  const { to } = dayRange(endDate, tz);
   const DB = env.DB;
   const orderFilter = "tenant_id = ? AND deleted = 0 AND ((closed_at >= ? AND closed_at < ?) OR status = 'open')";
   const [orders, items, payments, sessions, cashMoves, products, users, branches, stock, audit] = await Promise.all([
@@ -52,7 +53,7 @@ export function formatSummary(s, { businessName, currency = 'MXN', title }) {
   if (s.tips) L.push(`🤝 Propinas: ${m(s.tips)}`);
   if (s.discount) L.push(`🏷️ Descuentos: ${m(s.discount)}`);
   if (s.cancelled_orders || s.cancelled_items) L.push(`❌ Cancelaciones: ${s.cancelled_orders} cuentas, ${s.cancelled_items} productos (${m(s.cancelled_amount)})`);
-  if (s.open_orders) L.push(`🕒 Cuentas abiertas ahora: ${s.open_orders}`);
+  if (s.open_orders) L.push(`🕒 Cuentas abiertas ahora: ${s.open_orders} · Por cobrar: ${m(s.open_balance || 0)}`);
 
   if (s.by_product.length) {
     L.push('');

@@ -82,3 +82,32 @@ test('Telegram: vincular chat, corte de caja, stock bajo y resumen diario', asyn
   assert.match(sent[0].body.text, /Resumen de ayer/);
   assert.ok(sent[0].body.text.includes(localDate(Date.now() - 86400000, 'UTC')));
 });
+
+test('venta: espera todos los pagos, entrega por chat, reintenta fallo y respeta preferencias', async t => {
+  const {afterPush,drainOutbox}=await import('../worker/src/telegram.js');
+  const {push}=await import('../worker/src/sync.js');
+  const env=await createEnv(':memory:',{TELEGRAM_BOT_TOKEN:'mock',TELEGRAM_WEBHOOK_SECRET:'secret'});
+  const realFetch=globalThis.fetch, sent=[];let failSecond=true;
+  globalThis.fetch=async (_url,init)=> { const b=JSON.parse(init.body); const ok=!(b.chat_id==='2'&&failSecond);sent.push({...b,ok});return new Response(JSON.stringify({ok})); };
+  t.after(()=>{globalThis.fetch=realFetch;});
+  await env.DB.prepare("INSERT INTO tenants (id,slug,name,owner_email,owner_pass,created_at) VALUES ('t','telegram-test','Rock','x@y.mx','mock',1)").run();
+  await env.DB.prepare("INSERT INTO telegram_chats (tenant_id,chat_id,title,created_at) VALUES ('t','1','Dueño',1),('t','2','Socios',1)").run();
+  const seed=buildSeed({type:'rockalitas',tenantId:'t',businessName:'Rock',ownerName:'Carlos',pin:'1234',timezone:'UTC'});
+  await push(env,'t',Object.entries(seed.rows).flatMap(([t,rows])=>rows.map(r=>({t,r}))));
+  const now=Date.now();
+  const order={t:'orders',r:{id:'sale',updated_at:now,number:12,branch_id:seed.branchId,user_id:seed.rows.users[0].id,status:'paid',total:320,closed_at:now,opened_at:now}};
+  let r=await push(env,'t',[order]);await afterPush(env,'t',r.applied);assert.equal(sent.length,0,'no avisa antes de recibir el pago');
+  const payment={t:'payments',r:{id:'p1',updated_at:now,order_id:'sale',amount:120,tip:12,method:'efectivo',branch_id:seed.branchId,created_at:now}};
+  r=await push(env,'t',[payment]);await afterPush(env,'t',r.applied);assert.equal(sent.length,0);
+  const second={t:'payments',r:{...payment.r,id:'p2',amount:200,tip:20,method:'tarjeta'}};
+  r=await push(env,'t',[second]);await afterPush(env,'t',r.applied);
+  assert.equal(sent.length,2);assert.match(sent[0].text,/Venta cobrada[\s\S]*Total: \$320.00[\s\S]*Carlos[\s\S]*Propina: \$32.00/);
+  assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM telegram_outbox WHERE sent_at IS NULL').first()).n,1);
+  failSecond=false;await env.DB.prepare('UPDATE telegram_outbox SET next_attempt=0').run();await drainOutbox(env,'t');
+  assert.equal(sent.length,3);assert.equal(sent[2].chat_id,'2','solo reintenta el chat fallido');
+  r=await push(env,'t',[{...order,r:{...order.r,updated_at:now+1}},second]);await afterPush(env,'t',r.applied);assert.equal(sent.length,3,'reenvío de sincronización no duplica aviso');
+  await env.DB.prepare("UPDATE config SET value=json_set(value,'$.telegram_sales',json('false')) WHERE tenant_id='t'").run();
+  const disabled=[{...order,r:{...order.r,id:'sale2'}},{...payment,r:{...payment.r,id:'p3',order_id:'sale2',amount:320}}];
+  r=await push(env,'t',disabled);await afterPush(env,'t',r.applied);assert.equal(sent.length,3);
+  const unsafe=await worker.fetch(new Request('http://test/api/telegram/webhook',{method:'POST',body:'{}'}),{...env,TELEGRAM_WEBHOOK_SECRET:''},{waitUntil(){}});assert.equal(unsafe.status,403);
+});

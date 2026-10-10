@@ -27,9 +27,9 @@ class_name = "TenantLive"
 tag = "v1"
 new_sqlite_classes = ["TenantLive"]
 
-# Cada hora: el Worker revisa qué negocios están en su hora de resumen (según su zona horaria).
+# Cada 5 minutos: reintenta avisos pendientes y el Worker revisa qué negocios están en su hora de resumen (según su zona horaria).
 [triggers]
-crons = ["0 * * * *"]
+crons = ["*/5 * * * *"]
 
 [vars]
 # Dominio raíz (opcional). Vacío = todos los negocios entran por la misma dirección (workers.dev)

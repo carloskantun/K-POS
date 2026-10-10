@@ -12,6 +12,7 @@ const ICON_PATHS = {
   kitchen: '<path d="M7 15H5a4 4 0 0 1 0-8 5 5 0 0 1 10 0 4 4 0 1 1 4 8h-2v6H7zM7 17h10"/>',
   inventory: '<path d="m12 3 9 5-9 5-9-5zM3 8v9l9 5 9-5V8M12 13v9M7 5l9 5"/>',
   cash: '<rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3"/><path d="M6 12h.1M18 12h.1"/>',
+  results: '<path d="M3 3v18h18M7 15l5-5 4 3 5-7"/>',
   reports: '<path d="M4 3v18h17M8 16v-5m5 5V6m5 10v-8"/>',
   settings: '<path d="m9 3 1-2h4l1 2 3 2 2 1v4l-2 1v3l2 1v4l-2 1-3 2-1 2h-4l-1-2-3-2-2-1v-4l2-1v-3-1l-2-1V6l2-1z" transform="translate(0 0) scale(.9)"/><circle cx="11" cy="11" r="3"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',

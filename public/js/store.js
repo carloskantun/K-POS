@@ -2,6 +2,7 @@
 // de salida (outbox); la sincronización la sube cuando hay conexión.
 import * as db from './db.js';
 import { TABLE_NAMES, ROLES } from './shared/schema.js';
+import { mergeStockSnapshot } from './shared/stock.js';
 import { round3 } from './shared/util.js';
 
 export const S = {
@@ -189,7 +190,12 @@ export function openCashSession(b = branchId()) {
 // ---------- Escritura ----------
 
 // list: [[tabla, fila]]. Asigna updated_at, guarda en IndexedDB, encola para subir y avisa a la UI.
-export async function save(rows) {
+let writeChain = Promise.resolve();
+function serializedWrite(fn) {
+  const result=writeChain.then(fn); writeChain=result.catch(()=>{}); return result;
+}
+export function save(rows) { return serializedWrite(()=>saveRows(rows)); }
+async function saveRows(rows) {
   const now = Date.now();
   const entries = [];
   const touched = new Set();
@@ -221,11 +227,13 @@ export function applyStock(move) {
 }
 
 // Filas que llegan del servidor: no vuelven a la cola de salida.
-export async function applyRemote(changes, { stock } = {}) {
+export function applyRemote(changes, options = {}) { return serializedWrite(()=>applyRemoteRows(changes,options)); }
+async function applyRemoteRows(changes, { stock } = {}) {
   const entries = [];
   const touched = new Set();
   const box = new Map((await db.all('outbox')).map((e) => [e.key, e]));
   if (stock) {
+    stock = mergeStockSnapshot(stock, [...box.values()].filter(e=>e.t==='stock_moves').map(e=>S.data.stock_moves.get(e.id)).filter(Boolean), new Set((changes?.stock_moves || []).map(r=>r.id)));
     await db.clear(['stock']);
     S.stock = new Map();
     for (const s of stock) {

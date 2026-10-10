@@ -226,7 +226,7 @@ export function buildSeed({ type, tenantId, businessName, ownerName, pin, timezo
       recipe: (x.recipe || []).map(([k, qty]) => ({ product_id: ids[k], qty })), sort: i,
       active: 1, sellable: x.sellable ?? 1,
       modifiers: (x.mods || []).map((g) => ({
-        id: uid(), name: g.name, required: !!g.required, max: g.max ?? null,
+        id: uid(), name: g.name, required: !!g.required, max: g.max ?? null, ...(g.type ? {type:g.type,total:g.total,unit:g.unit} : {}),
         options: g.options.map(([name, price, key, qty]) => ({ id: uid(), name, price, ...(key ? { product_id: ids[key], qty } : {}) })),
       })),
     });

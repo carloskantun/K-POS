@@ -8,7 +8,7 @@ abarrotes/minisúper, fruterías/verdulerías, mayoreo, papelerías y más.
 - **Un solo sistema, muchos giros**: al crear el negocio eliges el giro y se activan los módulos que usa
   (mesas, comandas, meseros, recetas/insumos, código de barras, granel, mayoreo).
 - **Multi-negocio**: un dominio, un subdominio por cliente (`taqueria-lupita.kpos.mx`), una base D1.
-- **Reportes a Telegram**: resumen diario de ventas, caja e inventario; aviso de corte de caja; alertas de stock bajo.
+- **Reportes a Telegram**: avisos de ventas cobradas, resumen diario de ventas, caja e inventario; aviso de corte de caja; alertas de stock bajo.
 
 ## Qué hace
 
@@ -19,6 +19,7 @@ abarrotes/minisúper, fruterías/verdulerías, mayoreo, papelerías y más.
 | **Comandas** | Cocina, taquero, barra | Tarjetas por cuenta con minutos de espera y colores; **totales por producto** ("12 tacos al pastor"); sonido al llegar pedidos; filtro Cocina/Barra. |
 | **Inventario** | Encargado | Existencias, entradas de mercancía, mermas, **conteo rápido**, historial. Descuento automático por **receta** (1 taco = 2 tortillas + 35 g de carne; 1 cubeta = 6 cervezas). |
 | **Caja** | Cajero | Apertura con fondo, entradas/salidas, **corte** por denominación con esperado vs. contado (sobrante/faltante). |
+| **Resultados** | Dueño / Encargado / Cajero | KPIs de 1, 7 y 30 días, comparación con el periodo anterior y control actual de cuentas e inventario. |
 | **Reportes** | Dueño | Ventas, tickets, métodos de pago, por hora, más vendidos, por usuario, caja y stock bajo. |
 | **Ajustes** | Dueño | Productos con foto de la cámara, categorías, usuarios y roles, mesas, sucursales, dispositivos, Telegram. |
 
@@ -64,6 +65,8 @@ node test/e2e.mjs http://localhost:8787 test-results
 ADMIN_KEY=admin-test RATE_LIMIT=off npm run dev &   # para la prueba de bar
 node test/e2e-bar.mjs http://localhost:8787 test-results
 ```
+
+Guía de las nuevas funciones: **[Combinaciones, Telegram y resultados](docs/COMBINACIONES-Y-RESULTADOS.md)**.
 
 ## Publicar
 

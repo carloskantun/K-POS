@@ -44,7 +44,7 @@ export function mount(el) {
     const hours = s.by_hour.map((v, h) => ({ v, h })).filter((x, i, a) => a.slice(0, i + 1).some((y) => y.v) && a.slice(i).some((y) => y.v));
     const branches = list('branches').length;
     el.innerHTML = `<div class="reports">
-      <div class="view-head"><h2>Reportes</h2>
+      <div class="view-head"><h2>Reportes</h2><a class="btn small" href="#/results">Ver resultados y KPIs</a>
         <div class="date-nav"><button class="btn" data-act="prev">◀</button><input type="date" id="date" value="${date}"><button class="btn" data-act="next">▶</button><button class="btn ghost" data-act="today">Hoy</button></div></div>
       ${branches > 1 ? `<div class="seg"><button class="${scope === 'branch' ? 'on' : ''}" data-act="scope" data-s="branch">Esta sucursal</button><button class="${scope === 'all' ? 'on' : ''}" data-act="scope" data-s="all">Todas</button></div>` : ''}
       ${loading ? '<p class="muted">Cargando de la nube…</p>' : ''}

@@ -390,9 +390,13 @@ export function mount(el, params) {
     const c = cfg();
     if (S.meta.demo) return '<h2>Telegram</h2><p class="warn-box">Los reportes por Telegram requieren la cuenta en la nube (Ajustes → Negocio → Conectar a la nube).</p>';
     return `<h2>Reportes por Telegram</h2>
-      <p class="muted">Recibe cada mañana el resumen de ayer (ventas, caja, inventario), el corte de caja al cerrar y alertas de stock bajo, en tu chat o en un grupo con los socios.</p>
+      <p class="muted">Recibe cada mañana el resumen de ayer (ventas, caja, inventario), avisos de cada venta cobrada, el corte de caja al cerrar y alertas de stock bajo, en tu chat o en un grupo con los socios.</p>
       <div class="panel"><h3>1. Vincular un chat o grupo</h3><div id="tg-code"><button class="btn primary" data-act="tg-code">Generar código</button></div></div>
-      <div class="panel"><h3>2. Horarios</h3><form class="form" id="tgf">
+      <div class="panel"><h3>2. Avisos y horarios</h3><form class="form" id="tgf">
+        <label class="check"><input type="checkbox" name="telegram_sales" ${c.telegram_sales !== false ? 'checked' : ''}> Avisar cada venta cobrada</label>
+        <label class="check"><input type="checkbox" name="telegram_cuts" ${c.telegram_cuts !== false ? 'checked' : ''}> Avisar al cerrar caja</label>
+        <label class="check"><input type="checkbox" name="telegram_stock" ${c.telegram_stock !== false ? 'checked' : ''}> Alertar cuando un producto queda bajo el mínimo</label>
+        <p class="muted">Los avisos requieren internet y sincronización. El resumen diario incluye inventario, cuentas abiertas, ventas y diferencias de caja.</p>
         <label>Hora del resumen del día anterior</label><select name="report_hour">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${Number(c.report_hour ?? 8) === h ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}</select>
         <label>Avisos de “cómo va el día” (opcional)</label><div class="hours">${Array.from({ length: 24 }, (_, h) => `<label><input type="checkbox" name="ph" value="${h}" ${(c.progress_hours || []).map(Number).includes(h) ? 'checked' : ''}><span>${h}</span></label>`).join('')}</div>
         <div class="actions left"><button class="btn primary">Guardar horarios</button></div></form></div>
@@ -405,8 +409,10 @@ export function mount(el, params) {
     if (!box) return;
     try {
       const r = await api('/api/telegram/chats');
-      if (!r.configured) box.innerHTML = '<p class="warn-box">El bot aún no está configurado en el servidor (TELEGRAM_BOT_TOKEN).</p>';
+      el.querySelector('[data-act=tg-code]').disabled = !r.configured;
+      if (!r.configured) box.innerHTML = '<p class="warn-box">El proveedor aún no ha conectado un bot de Telegram. Puedes guardar tus preferencias; la recepción de avisos queda pendiente.</p>';
       else box.innerHTML = r.chats.map((c) => `<div class="inv-row"><span class="pic emoji sm">💬</span><div class="ir-info"><b>${esc(c.title || c.chat_id)}</b></div><button class="btn small danger ghost" data-act="tg-unlink" data-id="${esc(c.chat_id)}">Desvincular</button></div>`).join('') || 'Ningún chat vinculado todavía.';
+      if (r.configured && r.delivery) box.insertAdjacentHTML('beforeend', `<p class="muted">${r.delivery.pending} avisos pendientes · ${r.delivery.retrying} en reintento${r.delivery.last_sent ? ` · Último envío ${new Date(r.delivery.last_sent).toLocaleString('es-MX')}` : ''}</p>`);
     } catch {
       box.textContent = 'Sin conexión.';
     }
@@ -531,7 +537,7 @@ export function mount(el, params) {
     } else if (e.target.id === 'tgf') {
       e.preventDefault();
       const f = e.target;
-      await setCfg({ report_hour: Number(f.report_hour.value), progress_hours: [...f.querySelectorAll('[name=ph]:checked')].map((x) => Number(x.value)) });
+      await setCfg({ telegram_sales: f.telegram_sales.checked, telegram_cuts: f.telegram_cuts.checked, telegram_stock: f.telegram_stock.checked, report_hour: Number(f.report_hour.value), progress_hours: [...f.querySelectorAll('[name=ph]:checked')].map((x) => Number(x.value)) });
       toast('Horarios guardados');
     }
   };

@@ -1,5 +1,6 @@
 // Cálculo del resumen de ventas / caja / inventario. Mismo código en la PWA (datos locales)
 // y en el Worker (datos de D1) para que el reporte de Telegram cuadre con lo que ve el dueño.
+import { localDate } from './util.js';
 import { round2, round3 } from './util.js';
 
 const live = (r) => r && !r.deleted;
@@ -68,6 +69,8 @@ export function computeSummary(data, { from, to, branchId = null }) {
     .sort((a, b) => a.created_at - b.created_at)
     .map((a) => ({ ...a, user: users.get(a.user_id)?.name || '', authorized: users.get(a.authorized_by)?.name || '' }));
 
+  const byDay = {};
+  for (const o of paid) { const date = localDate(o.closed_at, data.tz || 'UTC'); byDay[date] = round2((byDay[date] || 0) + Number(o.total || 0)); }
   const hours = new Array(24).fill(0);
   if (data.tz) {
     const fmt = new Intl.DateTimeFormat('en-US', { timeZone: data.tz, hour: '2-digit', hourCycle: 'h23' });
@@ -106,6 +109,9 @@ export function computeSummary(data, { from, to, branchId = null }) {
     cancelled_orders: cancelled.length,
     cancelled_items: cancelledItems, cancelled_amount: round2(cancelledAmount),
     open_orders: orders.filter((o) => o.status === 'open').length,
+    open_balance: round2(orders.filter(o => o.status === 'open').reduce((sum,o) => sum + Number(o.total || 0),0)),
+    occupied_tables: new Set(orders.filter(o => o.status === 'open' && o.table_id).map(o => o.table_id)).size,
+    by_day: byDay,
     by_method: byMethod, by_product: byProduct, by_user: byUser, by_hour: hours.map(round2),
     tips: round2(tips), audit,
     cash, inventory, low_stock: inventory.filter((i) => i.low),
