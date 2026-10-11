@@ -35,7 +35,7 @@ crons = ["*/5 * * * *"]
 # Dominio raíz (opcional). Vacío = todos los negocios entran por la misma dirección (workers.dev)
 # y se identifican por su cuenta al vincular. Con dominio: ROOT_DOMAIN = "kpos.mx" → rockalitas.kpos.mx
 ROOT_DOMAIN = ""
-TELEGRAM_BOT_USERNAME = "rockalitas_bot"
+TELEGRAM_BOT_USERNAME = "kpos_avisos_bot"
 
 # Secretos (wrangler secret put ...):
 #   TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, ADMIN_KEY
