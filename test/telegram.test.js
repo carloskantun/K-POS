@@ -111,3 +111,28 @@ test('venta: espera todos los pagos, entrega por chat, reintenta fallo y respeta
   r=await push(env,'t',disabled);await afterPush(env,'t',r.applied);assert.equal(sent.length,3);
   const unsafe=await worker.fetch(new Request('http://test/api/telegram/webhook',{method:'POST',body:'{}'}),{...env,TELEGRAM_WEBHOOK_SECRET:''},{waitUntil(){}});assert.equal(unsafe.status,403);
 });
+
+test('enlaces automáticos: negocio correcto, grupo/privado, vencimiento y un solo uso', async t => {
+  const env=await createEnv(':memory:',{TELEGRAM_BOT_TOKEN:'mock',TELEGRAM_WEBHOOK_SECRET:'hook',TELEGRAM_BOT_USERNAME:'kpos_avisos_bot',RATE_LIMIT:'off'});
+  const original=globalThis.fetch, sent=[];
+  globalThis.fetch=async (_url,init)=>{sent.push(JSON.parse(init.body));return new Response(JSON.stringify({ok:true}));};t.after(()=>{globalThis.fetch=original;});
+  const waits=[],ctx={waitUntil:p=>waits.push(p)};
+  async function call(path,{token,body,hook=false}={}) {
+    const res=await worker.fetch(new Request(`http://test${path}`,{method:'POST',headers:{'content-type':'application/json',...(token?{authorization:`Bearer ${token}`} :{}),...(hook?{'x-telegram-bot-api-secret-token':'hook'}:{})},body:JSON.stringify(body||{})}),env,ctx);
+    await Promise.all(waits.splice(0));return {status:res.status,data:res.headers.get('content-type')?.includes('json')?await res.json():await res.text()};
+  }
+  const register=async (slug,name)=> (await call('/api/register',{body:{tenant_id:uid(),slug,name,email:`${slug}@test.mx`,password:'secret123'}})).data;
+  const rock=await register('rock-test','Rock Alitas'), tacos=await register('tacos-test','Taquería Lupita');
+  const link=async (a,target)=> (await call('/api/link-code',{token:a.token,body:{purpose:'telegram',telegram_target:target}})).data;
+  const start=async (code,id,type)=>call('/api/telegram/webhook',{hook:true,body:{message:{text:`/start@kpos_avisos_bot ${code}`,chat:{id,type,title:`Grupo ${id}`}}}});
+  const group=await link(rock,'group');assert.equal(group.business,'Rock Alitas');assert.equal(group.code.length,64);assert.equal(group.url,`https://t.me/kpos_avisos_bot?startgroup=${group.code}`);
+  await start(group.code,10,'private');assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM telegram_chats').first()).n,0,'un enlace de grupo no vincula un privado');
+  await start(group.code,-10010,'supergroup');assert.match(sent.at(-1).text,/Chat vinculado con <b>Rock Alitas/);
+  assert.equal((await env.DB.prepare('SELECT tenant_id FROM telegram_chats WHERE chat_id=?').bind('-10010').first()).tenant_id,rock.tenant.id);
+  await start(group.code,-10011,'group');assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM telegram_chats').first()).n,1,'un código no vincula un segundo chat');
+  const privateLink=await link(tacos,'private');assert.equal(privateLink.url,`https://t.me/kpos_avisos_bot?start=${privateLink.code}`);
+  await start(privateLink.code,-10012,'group');await start(privateLink.code,12,'private');assert.match(sent.at(-1).text,/Taquería Lupita/);
+  assert.equal((await env.DB.prepare('SELECT tenant_id FROM telegram_chats WHERE chat_id=?').bind('12').first()).tenant_id,tacos.tenant.id);
+  const expired=await link(rock,'group');await env.DB.prepare('UPDATE link_codes SET expires_at=0 WHERE code=?').bind(expired.code).run();await start(expired.code,-10013,'group');assert.match(sent.at(-1).text,/vencido/);
+  const one=await link(rock,'group');await Promise.all([start(one.code,-10014,'group'),start(one.code,-10015,'group')]);assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM telegram_chats WHERE chat_id IN ('-10014','-10015')").first()).n,1,'la vinculación resiste dos solicitudes simultáneas');
+});

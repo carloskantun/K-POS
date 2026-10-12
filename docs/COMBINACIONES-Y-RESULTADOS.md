@@ -27,7 +27,9 @@ Las entregas se guardan por evento y chat. Si Telegram rechaza un envío, queda 
 1. Crear un bot con [BotFather](https://t.me/BotFather) o usar el bot existente. No pegar el token en mensajes ni guardarlo en Git.
 2. En un archivo JSON privado fuera del repositorio, guardar únicamente `TELEGRAM_BOT_TOKEN` y `TELEGRAM_WEBHOOK_SECRET`. El segundo debe ser un secreto aleatorio de 16–256 caracteres admitidos por Telegram.
 3. Desde la carpeta K-POS, ejecutar `node scripts/configure-telegram.mjs /ruta/privada/telegram.json`. El script valida el bot, guarda los dos secretos en Cloudflare y configura el webhook y comandos sin imprimir el token. Requiere la sesión de Wrangler del proveedor.
-4. Agregar el bot al grupo. En el POS del negocio, Ajustes → Telegram → Generar código. Enviar `/vincular CODIGO` en el grupo y probar “Enviar resumen de hoy”.
+4. Crear un grupo con las personas que recibirán los avisos. En el POS del negocio: Ajustes → Telegram → Conectar grupo de Telegram. Telegram permite elegir el grupo y agregar el bot, llevando la cuenta del negocio automáticamente. Para una sola persona existe “Recibir en mi chat privado”. Al volver al POS se actualizan los chats vinculados; también se puede pulsar “Comprobar vinculación”. Probar “Enviar resumen de hoy”.
+
+Los enlaces automáticos vencen en 15 minutos y se usan una sola vez. Se vinculan exclusivamente al negocio que los generó y al destino elegido (grupo o privado). Si Telegram no se abre automáticamente, aparece un enlace para abrirlo manualmente. “Vincular con código manual” mantiene disponible el método anterior.
 
 Como alternativa, se pueden crear los dos secretos en la configuración del Worker y activar `/api/admin/telegram-setup` con la sesión del superadministrador. Se requiere el secreto de webhook para aceptar mensajes entrantes. La variable pública `TELEGRAM_BOT_USERNAME` es opcional y sirve para mostrar el enlace al bot.
 

@@ -23,6 +23,7 @@ export function mount(el, params) {
   const hasRockMenu = () => cfg().type === 'rockalitas' || cfg().menu_template === 'rockalitas' || [...S.data.products.keys()].some(id => id.startsWith('rockalitas-menu-'));
   let section = params.s === 'rockmenu' && !hasRockMenu() ? 'products' : params.s || 'business';
   let search = '';
+  let generatingTelegram = false, disposed = false;
 
   function draw() {
     el.innerHTML = `<div class="settings">
@@ -391,7 +392,11 @@ export function mount(el, params) {
     if (S.meta.demo) return '<h2>Telegram</h2><p class="warn-box">Los reportes por Telegram requieren la cuenta en la nube (Ajustes → Negocio → Conectar a la nube).</p>';
     return `<h2>Reportes por Telegram</h2>
       <p class="muted">Recibe cada mañana el resumen de ayer (ventas, caja, inventario), avisos de cada venta cobrada, el corte de caja al cerrar y alertas de stock bajo, en tu chat o en un grupo con los socios.</p>
-      <div class="panel"><h3>1. Vincular un chat o grupo</h3><div id="tg-code"><button class="btn primary" data-act="tg-code">Generar código</button></div></div>
+      <div class="panel"><h3>1. Conectar Telegram a ${esc(c.name || S.meta.tenant?.name || 'tu negocio')}</h3>
+        <p class="muted">Crea un grupo con las personas que recibirán los avisos. Después pulsa el botón y elige ese grupo en Telegram. La cuenta del negocio se incluye automáticamente en el enlace.</p>
+        <div class="actions left"><button class="btn primary" data-act="tg-group" disabled>Conectar grupo de Telegram</button><button class="btn" data-act="tg-private" disabled>Recibir en mi chat privado</button></div>
+        <div id="tg-connect" aria-live="polite"></div>
+        <details><summary>Vincular con código manual</summary><div id="tg-code"><button class="btn small" data-act="tg-code" disabled>Generar código</button></div></details></div>
       <div class="panel"><h3>2. Avisos y horarios</h3><form class="form" id="tgf">
         <label class="check"><input type="checkbox" name="telegram_sales" ${c.telegram_sales !== false ? 'checked' : ''}> Avisar cada venta cobrada</label>
         <label class="check"><input type="checkbox" name="telegram_cuts" ${c.telegram_cuts !== false ? 'checked' : ''}> Avisar al cerrar caja</label>
@@ -400,7 +405,7 @@ export function mount(el, params) {
         <label>Hora del resumen del día anterior</label><select name="report_hour">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${Number(c.report_hour ?? 8) === h ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}</select>
         <label>Avisos de “cómo va el día” (opcional)</label><div class="hours">${Array.from({ length: 24 }, (_, h) => `<label><input type="checkbox" name="ph" value="${h}" ${(c.progress_hours || []).map(Number).includes(h) ? 'checked' : ''}><span>${h}</span></label>`).join('')}</div>
         <div class="actions left"><button class="btn primary">Guardar horarios</button></div></form></div>
-      <div class="panel"><h3>Chats vinculados</h3><div id="tg-chats" class="muted">Cargando…</div>
+      <div class="panel"><h3>Chats vinculados a ${esc(c.name || S.meta.tenant?.name || 'este negocio')}</h3><button class="btn small" data-act="tg-refresh">Comprobar vinculación</button><div id="tg-chats" class="muted">Cargando…</div>
         <div class="actions left"><button class="btn" data-act="tg-test">📨 Enviar resumen de hoy</button><button class="btn" data-act="tg-test-y">📨 Enviar resumen de ayer</button></div></div>`;
   }
 
@@ -409,12 +414,39 @@ export function mount(el, params) {
     if (!box) return;
     try {
       const r = await api('/api/telegram/chats');
-      el.querySelector('[data-act=tg-code]').disabled = !r.configured;
+      if (disposed || !box.isConnected) return;
+      el.querySelectorAll('[data-act=tg-code],[data-act=tg-group],[data-act=tg-private]').forEach(b => { b.disabled = !r.configured || generatingTelegram; });
       if (!r.configured) box.innerHTML = '<p class="warn-box">El proveedor aún no ha conectado un bot de Telegram. Puedes guardar tus preferencias; la recepción de avisos queda pendiente.</p>';
       else box.innerHTML = r.chats.map((c) => `<div class="inv-row"><span class="pic emoji sm">💬</span><div class="ir-info"><b>${esc(c.title || c.chat_id)}</b></div><button class="btn small danger ghost" data-act="tg-unlink" data-id="${esc(c.chat_id)}">Desvincular</button></div>`).join('') || 'Ningún chat vinculado todavía.';
       if (r.configured && r.delivery) box.insertAdjacentHTML('beforeend', `<p class="muted">${r.delivery.pending} avisos pendientes · ${r.delivery.retrying} en reintento${r.delivery.last_sent ? ` · Último envío ${new Date(r.delivery.last_sent).toLocaleString('es-MX')}` : ''}</p>`);
     } catch {
       box.textContent = 'Sin conexión.';
+    }
+  }
+
+  async function connectTelegram(target) {
+    if (generatingTelegram) return;
+    generatingTelegram = true;
+    // Se abre durante el clic para evitar bloqueos de ventanas al esperar la API.
+    const popup = window.open('about:blank', '_blank');
+    if (popup) popup.opener = null;
+    const box = el.querySelector('#tg-connect');
+    el.querySelectorAll('[data-act=tg-group],[data-act=tg-private],[data-act=tg-code]').forEach(b => { b.disabled = true; });
+    if (box) box.textContent = 'Preparando la conexión con Telegram…';
+    try {
+      const r = await api('/api/link-code', { method: 'POST', body: { purpose: 'telegram', telegram_target: target } });
+      if (disposed || !box?.isConnected) { popup?.close(); return; }
+      box.innerHTML = `<p><b>${esc(r.business || cfg().name)}</b> · ${target === 'group' ? 'Elige el grupo en Telegram y confirma agregar el bot.' : 'Pulsa Iniciar en Telegram.'}</p>
+        <a class="btn primary" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${target === 'group' ? 'Elegir grupo en Telegram' : 'Abrir mi chat de Telegram'}</a>
+        <p class="muted small">Este enlace vence en 15 minutos y se usa una sola vez. Al terminar, regresa aquí para ver la vinculación.</p>`;
+      if (popup && !popup.closed) popup.location.replace(r.url);
+    } catch (err) {
+      popup?.close();
+      if (box?.isConnected) box.textContent = err.message;
+      toast(err.message, 'error');
+    } finally {
+      generatingTelegram = false;
+      if (!disposed && section === 'telegram') loadTelegram();
     }
   }
 
@@ -452,6 +484,8 @@ export function mount(el, params) {
     const id = a.dataset.id;
     if (act === 'section') { section = a.dataset.s; search = ''; draw(); return; }
     if (act === 'new-product') productForm();
+    else if (act === 'tg-group' || act === 'tg-private') await connectTelegram(act === 'tg-group' ? 'group' : 'private');
+    else if (act === 'tg-refresh') await loadTelegram();
     else if (act === 'load-rockmenu') await loadRockMenu();
     else if (act === 'export-products') exportProducts();
     else if (act === 'edit-product') productForm(get('products', id));
@@ -571,6 +605,8 @@ export function mount(el, params) {
     const relevant = { rockmenu: ['products', 'categories'], products: ['products', 'categories', 'stock_moves'], categories: ['categories', 'products'], users: ['users'], tables: ['tables'], branches: ['branches'] }[section];
     if (relevant && relevant.some((t) => c.has(t))) drawSection();
   });
+  const checkTelegram = () => { if (!disposed && section === 'telegram' && !document.hidden && !generatingTelegram) loadTelegram(); };
+  window.addEventListener('focus', checkTelegram); document.addEventListener('visibilitychange', checkTelegram);
   draw();
-  return () => { off(); el.removeEventListener('click', onClick); el.removeEventListener('submit', onSubmit); el.removeEventListener('input', onInput); el.removeEventListener('change', onChange); };
+  return () => { disposed = true; window.removeEventListener('focus', checkTelegram); document.removeEventListener('visibilitychange', checkTelegram); off(); el.removeEventListener('click', onClick); el.removeEventListener('submit', onSubmit); el.removeEventListener('input', onInput); el.removeEventListener('change', onChange); };
 }

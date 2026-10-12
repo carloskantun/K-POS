@@ -194,19 +194,26 @@ export async function handleWebhook(request, env) {
   const linked = (await env.DB.prepare('SELECT t.id, t.name, t.slug FROM telegram_chats c JOIN tenants t ON t.id = c.tenant_id WHERE c.chat_id = ?').bind(chatId).all()).results || [];
 
   if ((cmd === '/start' && args[0]) || cmd === '/vincular') {
-    const code = (args[0] || '').replace(/\D/g, '');
-    const row = code && await env.DB.prepare("SELECT tenant_id FROM link_codes WHERE code = ? AND purpose = 'telegram' AND expires_at > ?").bind(code, Date.now()).first();
+    const candidate = args[0] || '';
+    const code = /^(?:[0-9]{6}|[A-Za-z0-9_-]{16,64})$/.test(candidate) ? candidate : '';
+    const row = code && await env.DB.prepare("SELECT tenant_id,purpose FROM link_codes WHERE code = ? AND purpose IN ('telegram','telegram-group','telegram-private') AND expires_at > ?").bind(code, Date.now()).first();
     if (!row) { await reply('❌ Código inválido o vencido. Genera uno nuevo en K-POS → Ajustes → Telegram.'); return new Response('ok'); }
-    await env.DB.batch([
-      env.DB.prepare('INSERT OR REPLACE INTO telegram_chats (tenant_id, chat_id, title, created_at) VALUES (?, ?, ?, ?)').bind(row.tenant_id, chatId, title, Date.now()),
+    const group = ['group','supergroup'].includes(msg.chat.type);
+    if ((row.purpose === 'telegram-group' && !group) || (row.purpose === 'telegram-private' && msg.chat.type !== 'private')) {
+      await reply(row.purpose === 'telegram-group' ? 'Este enlace conecta un grupo. Regresa al POS y pulsa Conectar grupo de Telegram.' : 'Este enlace conecta tu chat privado. Regresa al POS y pulsa Recibir en mi chat privado.');
+      return new Response('ok');
+    }
+    const result = await env.DB.batch([
+      env.DB.prepare("INSERT OR REPLACE INTO telegram_chats (tenant_id,chat_id,title,created_at) SELECT tenant_id,?,?,? FROM link_codes WHERE code=? AND purpose IN ('telegram','telegram-group','telegram-private') AND expires_at>?").bind(chatId,title,Date.now(),code,Date.now()),
       env.DB.prepare('DELETE FROM link_codes WHERE code = ?').bind(code),
     ]);
+    if (!result[0]?.meta?.changes) { await reply('Este enlace ya se usó o venció. Genera uno nuevo en Ajustes → Telegram.'); return new Response('ok'); }
     const t = await env.DB.prepare('SELECT name FROM tenants WHERE id = ?').bind(row.tenant_id).first();
     await reply(`✅ Chat vinculado con <b>${esc(t?.name)}</b>.\nRecibirás avisos de ventas cobradas, el resumen diario, cortes de caja y stock bajo.\n\n${HELP}`);
     return new Response('ok');
   }
   if (!linked.length) {
-    await reply(`👋 Hola. Este chat aún no está conectado a ningún negocio.\nEn K-POS ve a <b>Ajustes → Telegram</b>, genera un código y envía aquí:\n<code>/vincular 123456</code>`);
+    await reply(`👋 Hola. Este chat aún no está conectado a ningún negocio.\nEn K-POS ve a <b>Ajustes → Telegram</b>, pulsa <b>Conectar grupo de Telegram</b> o <b>Recibir en mi chat privado</b>. También puedes usar un código manual:\n<code>/vincular 123456</code>`);
     return new Response('ok');
   }
   if (cmd === '/desvincular') {

@@ -192,14 +192,17 @@ async function api(request, env, ctx, path) {
 
   if (path === '/api/link-code' && method === 'POST') {
     const b = await body(request);
-    const purpose = b.purpose === 'telegram' ? 'telegram' : 'device';
-    const code = randomCode(6);
+    const target = b.purpose === 'telegram' && ['group','private'].includes(b.telegram_target) ? b.telegram_target : null;
+    const bot = env.TELEGRAM_BOT_USERNAME || null;
+    if (target && (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET || !/^[A-Za-z0-9_]+$/.test(bot || ''))) return fail(503, 'El proveedor debe conectar el bot antes de vincular Telegram.');
+    const purpose = b.purpose === 'telegram' ? (target ? `telegram-${target}` : 'telegram') : 'device';
+    const code = target ? newToken() : randomCode(6);
     const expires = Date.now() + 15 * 60 * 1000;
     await env.DB.batch([
       env.DB.prepare('DELETE FROM link_codes WHERE expires_at < ?').bind(Date.now()),
       env.DB.prepare('INSERT OR REPLACE INTO link_codes (code, tenant_id, purpose, expires_at) VALUES (?, ?, ?, ?)').bind(code, tenantId, purpose, expires),
     ]);
-    return json({ code, expires_at: expires, bot: env.TELEGRAM_BOT_USERNAME || null });
+    return json({ code, expires_at: expires, bot, ...(target ? { target, business: dev.tenant_name, url: `https://t.me/${bot}?${target === 'group' ? 'startgroup' : 'start'}=${code}` } : {}) });
   }
 
   if (path === '/api/reports/kpis' && method === 'GET') {
